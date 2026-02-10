@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Prototype - PDAM App</title>
+    <!-- Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap"
+        rel="stylesheet">
+    <!-- Scripts -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0ea5e9;
+            --primary-dark: #0284c7;
+            --secondary: #64748b;
+            --background: #f8fafc;
+            --surface: #ffffff;
+            --text: #0f172a;
+            --border: #e2e8f0;
+        }
+
+        body {
+            margin: 0;
+            background: var(--background);
+        }
+
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Import Lucide icons to window
+        const { Camera, Upload, CheckCircle2, AlertCircle, RefreshCcw, Loader2 } = lucide;
+
+        // OCRPrototype logic (same as the JSX file but adapted for CDN)
+        // I will copy the logic here so the user can just open this file.
+
+        const OCRPrototype = () => {
+            const [image, setImage] = React.useState(null);
+            const [preview, setPreview] = React.useState(null);
+            const [userInput, setUserInput] = React.useState('');
+            const [loading, setLoading] = React.useState(false);
+            const [result, setResult] = React.useState(null);
+            const [error, setError] = React.useState(null);
+            const fileInputRef = React.useRef(null);
+
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setImage(file);
+                    setPreview(URL.createObjectURL(file));
+                    setResult(null);
+                    setError(null);
+                }
+            };
+
+            const handleValidate = async () => {
+                if (!image) { setError("Silakan pilih foto."); return; }
+                if (!userInput) { setError("Masukkan angka meter."); return; }
+                setLoading(true);
+                setError(null);
+                const formData = new FormData();
+                formData.append('image', image);
+                formData.append('user_input', userInput);
+                try {
+                    const response = await fetch('http://localhost:5000/validate', { method: 'POST', body: formData });
+                    if (!response.ok) throw new Error("Backend Python (app.py) belum dijalankan.");
+                    const data = await response.json();
+                    setResult(data);
+                } catch (err) { setError(err.message); }
+                finally { setLoading(false); }
+            };
+
+            return (
+                <div style={styles.container}>
+                    <div style={styles.card}>
+                        <h2 style={styles.title}>Validasi Foto Meter</h2>
+                        <p style={styles.subtitle}>Upload foto meter dan input <b>angka Kilometer (m³)</b></p>
+                        <div style={styles.contentGrid}>
+                            <div>
+                                <div style={styles.formGroup}>
+                                    <label style={styles.label}>Angka Kilometer (m³)</label>
+                                    <input type="number" value={userInput} onChange={e => setUserInput(e.target.value)} style={styles.input} placeholder="Masukan Angka Meter" />
+                                </div>
+                                <div style={styles.formGroup}>
+                                    <label style={styles.label}>Foto Meter</label>
+                                    <div style={styles.dropzone} onClick={() => fileInputRef.current.click()}>
+                                        {preview ? <img src={preview} style={styles.previewImg} /> : "Klik untuk Upload"}
+                                    </div>
+                                    <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*" />
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button onClick={handleValidate} disabled={loading} style={styles.btnPrimary}>
+                                        {loading ? "Memproses..." : "Validasi Sekarang"}
+                                    </button>
+                                    <button onClick={() => { setImage(null); setPreview(null); setUserInput(''); setResult(null); }} style={styles.btnOutline}>Reset</button>
+                                </div>
+                                {error && <p style={{ color: 'red', marginTop: '10px' }}>{error}</p>}
+                            </div>
+                            <div style={styles.resultSection}>
+                                {result ? (
+                                    <div style={styles.resultCard}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <strong>Hasil: {result.is_match ? "SESUAI" : "TIDAK SESUAI"}</strong>
+                                            <span>{result.similarity_percent}%</span>
+                                        </div>
+                                        <div style={{ marginTop: '10px', height: '10px', background: '#eee', borderRadius: '5px' }}>
+                                            <div style={{ height: '100%', width: result.similarity_percent + '%', background: result.similarity_percent > 80 ? '#22c55e' : result.similarity_percent > 50 ? '#f59e0b' : '#ef4444', borderRadius: '5px' }}></div>
+                                        </div>
+                                        <p style={{ marginTop: '15px' }}>AI (Hitam): <strong>{result.detected || "-"}</strong></p>
+                                        <p>Paling Mendekati: <strong style={{ color: '#0ea5e9' }}>{result.best_match || "-"}</strong></p>
+                                        <p>Input Petugas: <strong>{result.user_input}</strong></p>
+                                        <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '10px' }}>
+                                            Raw: {result.raw_results.join(', ')}
+                                        </div>
+
+                                        {result.debug_image && (
+                                            <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #eee' }}>
+                                                <p style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '5px' }}>AI Perception (Olah Gambar):</p>
+                                                <img src={result.debug_image} style={{ width: '100%', borderRadius: '4px', border: '1px solid #ddd' }} />
+                                                <p style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px' }}>*Ini adalah gambar yang dilihat AI setelah dikonversi ke hitam-putih & ditajamkan.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : "Menunggu validasi..."}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const styles = {
+            container: { padding: '40px', maxWidth: '900px', margin: '0 auto', fontFamily: 'Inter' },
+            card: { background: 'white', padding: '30px', borderRadius: '12px', border: '1px solid #ddd' },
+            title: { fontFamily: 'Outfit', marginBottom: '20px' },
+            contentGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' },
+            formGroup: { marginBottom: '20px' },
+            label: { display: 'block', fontWeight: 'bold', marginBottom: '5px' },
+            input: { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ddd' },
+            dropzone: { height: '200px', border: '2px dashed #ddd', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' },
+            previewImg: { width: '100%', height: '100%', objectFit: 'contain' },
+            btnPrimary: { background: '#0ea5e9', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer' },
+            btnOutline: { background: 'white', border: '1px solid #ddd', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer' },
+            resultSection: { background: '#f8fafc', padding: '20px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+            resultCard: { width: '100%', background: 'white', padding: '15px', borderRadius: '10px', border: '1px solid #ddd' }
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<OCRPrototype />);
+    </script>
+</body>
+
+</html>

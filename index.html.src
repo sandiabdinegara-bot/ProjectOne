@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description"
+    content="Sistem Informasi Manajemen Pelanggan PDAM - Solusi modern, efisien, dan profesional untuk sistem informasi manajemen air minum." />
+  <meta name="theme-color" content="#0ea5e9" />
+
+  <!-- Premium Typography: Outfit for headers, Inter for body -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+
+  <title>SICATER PDAM - Smart Dashboard</title>
+
+  <!-- Global Design System & Animations -->
+  <style>
+    :root {
+      --primary: #0ea5e9;
+      --primary-dark: #0284c7;
+      --primary-light: #e0f2fe;
+      --bg-slate: #f8fafc;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --glass: rgba(255, 255, 255, 0.7);
+    }
+
+    * {
+      box-sizing: border-box;
+      outline: none;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-slate);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      color: var(--text-main);
+      overflow-x: hidden;
+    }
+
+    /* Professional Page Transitions */
+    @keyframes fadeIn {
+      0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+        filter: blur(10px);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+      }
+    }
+
+    @keyframes spin-custom {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes line-glow {
+      0% {
+        left: -100%;
+        width: 30%;
+      }
+
+      50% {
+        width: 50%;
+      }
+
+      100% {
+        left: 100%;
+        width: 30%;
+      }
+    }
+
+    @keyframes branding-float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-5px);
+      }
+    }
+  </style>
+
+  <!-- Development Entry Point -->
+  <script type="module" src="/src/main.jsx"></script>
+</head>
+
+<body>
+  <div id="root">
+    <!-- Advanced Splash Screen -->
+    <div
+      style="height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at center, #ffffff 0%, #f1f5f9 100%);">
+
+      <!-- Logo Container -->
+      <div
+        style="position: relative; width: 100px; height: 100px; margin-bottom: 3rem; display: flex; align-items: center; justify-content: center;">
+        <div
+          style="position: absolute; inset: 0; border: 3px solid var(--primary-light); border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; animation: spin-custom 8s linear infinite;">
+        </div>
+        <div
+          style="position: absolute; inset: 10px; border: 2px solid var(--primary); border-radius: 50%; border-top-color: transparent; animation: spin-custom 1.5s cubic-bezier(0.5, 0, 0.5, 1) infinite;">
+        </div>
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--primary)" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+        </svg>
+      </div>
+
+      <!-- Branding Text -->
+      <div style="text-align: center; animation: branding-float 3s ease-in-out infinite;">
+        <div
+          style="font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 2.25rem; color: var(--text-main); letter-spacing: -0.04em; line-height: 1;">
+          PDAM <span
+            style="color: var(--primary); background: linear-gradient(135deg, var(--primary), #38bdf8); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">SMART</span>
+        </div>
+        <div
+          style="font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.875rem; color: var(--text-muted); letter-spacing: 0.4em; text-transform: uppercase; margin-top: 0.5rem; margin-left: 0.4em;">
+          DASHBOARD SYSTEM
+        </div>
+      </div>
+
+      <!-- Professional Loading Bar -->
+      <div
+        style="margin-top: 3rem; width: 240px; height: 3px; background: #e2e8f0; border-radius: 10px; overflow: hidden; position: relative;">
+        <div
+          style="position: absolute; top: 0; height: 100%; background: linear-gradient(90deg, transparent, var(--primary), transparent); animation: line-glow 1.5s infinite ease-in-out;">
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+        <p
+          style="color: var(--primary); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin: 0;">
+          Sinkronisasi Data...</p>
+        <p style="color: #cbd5e1; font-size: 0.6rem; font-weight: 600; margin: 0;">Powered by PDAM Digital Engine v2.1
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
