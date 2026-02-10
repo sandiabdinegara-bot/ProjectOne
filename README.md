@@ -29,9 +29,6 @@
 - Database Petugas: Kelola data petugas pencatat lapangan dengan penugasan rute per cabang.
 - Status Aktif & Profil: Penanganan status aktif dan foto resmi petugas.
 
-### 5. **Export & Laporan**
-- Dukungan Multi-Format: Cetak laporan ke **PDF**, **Excel (XLSX)**, dan **CSV** dengan hasil yang rapi dan profesional.
-
 ---
 
 ## 🛠️ Alur Kerja Pengembangan
@@ -43,5 +40,3 @@ Untuk memastikan aplikasi berjalan lancar di lingkungan XAMPP:
 3.  **`jalankan_build.bat`**: Gunakan untuk memproses kodingan menjadi aplikasi siap pakai di XAMPP (`http://localhost/PDAM_app/`).
 
 ---
-
-*Dikembangkan dengan ❤️ untuk Efisiensi Pelayanan Air Bersih.*
