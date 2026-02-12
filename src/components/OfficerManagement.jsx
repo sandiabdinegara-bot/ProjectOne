@@ -6,8 +6,11 @@ import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+import { BASE_URL } from '../config';
+import { fetchWithAuth } from '../api';
+
 const API_URL = './api/officers.php';
-const API_BASE_URL = 'http://localhost'; // Base URL for absolute paths (XAMPP)
+const API_BASE_URL = BASE_URL;
 
 const ALL_COLUMNS = [
     { id: 'id', label: 'ID' },
@@ -87,7 +90,7 @@ export default function OfficerManagement() {
 
     const fetchBranches = async () => {
         try {
-            const res = await fetch('./api/options.php?type=cabang');
+            const res = await fetchWithAuth('./api/options.php?type=cabang');
             const data = await res.json();
             setBranches(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -97,7 +100,7 @@ export default function OfficerManagement() {
 
     const fetchRoutes = async (branchCode) => {
         try {
-            const res = await fetch(`./api/branch_routes.php?kode_cabang=${branchCode}`);
+            const res = await fetchWithAuth(`./api/branch_routes.php?kode_cabang=${branchCode}`);
             const data = await res.json();
             const assignedRoutes = data.filter(r => r.assigned).map(r => ({ kode_rute: r.kode_rute, rute: r.rute }));
             setRoutes(Array.isArray(assignedRoutes) ? assignedRoutes : []);
@@ -158,7 +161,7 @@ export default function OfficerManagement() {
     const fetchOfficers = async () => {
         try {
             setLoading(true);
-            const res = await fetch(API_URL);
+            const res = await fetchWithAuth(API_URL);
             const data = await res.json();
             setOfficers(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -230,7 +233,7 @@ export default function OfficerManagement() {
 
         try {
             setLoading(true);
-            const res = await fetch(url, {
+            const res = await fetchWithAuth(url, {
                 method: 'POST',
                 body: body // Fetch sets Content-Type to multipart/form-data automatically
             });
@@ -263,7 +266,7 @@ export default function OfficerManagement() {
 
         if (result.isConfirmed) {
             try {
-                const res = await fetch(`${API_URL}?id=${id}`, { method: 'DELETE' });
+                const res = await fetchWithAuth(`${API_URL}?id=${id}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.message) {
                     Swal.fire('Terhapus!', 'Data petugas telah dihapus.', 'success');

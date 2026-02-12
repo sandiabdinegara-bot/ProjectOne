@@ -7,9 +7,12 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 
+import { BASE_URL } from '../config';
+import { fetchWithAuth } from '../api';
+
 const API_URL = './api/recordings.php';
 const CUSTOMER_API = './api/customers.php';
-const API_BASE_URL = 'http://localhost'; // Base URL for absolute paths (XAMPP)
+const API_BASE_URL = BASE_URL;
 
 const ALL_COLUMNS = [
     { id: 'id_sambungan', label: 'NO. SAMBUNGAN' },
@@ -101,8 +104,8 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
         try {
             setLoading(true);
             const [recRes, custRes] = await Promise.all([
-                fetch(API_URL),
-                fetch(CUSTOMER_API)
+                fetchWithAuth(API_URL),
+                fetchWithAuth(CUSTOMER_API)
             ]);
             const [recData, custData] = await Promise.all([
                 recRes.json(),
@@ -120,7 +123,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
 
     const fetchStatusKondisi = async () => {
         try {
-            const res = await fetch('./api/options.php?type=status_kondisi');
+            const res = await fetchWithAuth('./api/options.php?type=status_kondisi');
             const data = await res.json();
             setStatusKondisiOptions(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -257,7 +260,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                 body.append('tgl_verifikasi', timestamp);
             }
 
-            const res = await fetch(`${API_URL}${editingRecording ? '?id=' + editingRecording.id : ''}`, {
+            const res = await fetchWithAuth(`${API_URL}${editingRecording ? '?id=' + editingRecording.id : ''}`, {
                 method: 'POST',
                 body: body
             });
@@ -305,7 +308,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
 
     const fetchStatusAnalisa = async () => {
         try {
-            const res = await fetch('./api/options.php?type=status_analisa');
+            const res = await fetchWithAuth('./api/options.php?type=status_analisa');
             const data = await res.json();
             setStatusAnalisaOptions(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -543,7 +546,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
         console.log("Fetching history for:", id_sambungan);
         setCustomerHistory([]); // Clear previous history
         try {
-            const response = await fetch(`./api/customer_history.php?id_sambungan=${id_sambungan}`);
+            const response = await fetchWithAuth(`./api/customer_history.php?id_sambungan=${id_sambungan}`);
             const data = await response.json();
             setCustomerHistory(Array.isArray(data) ? data : []);
         } catch (error) {
@@ -586,7 +589,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
             formDataAi.append('image', imageFile);
             formDataAi.append('user_input', userInput);
 
-            const response = await fetch('http://localhost:5000/validate', {
+            const response = await fetchWithAuth('http://localhost:5000/validate', {
                 method: 'POST',
                 body: formDataAi
             });
@@ -616,7 +619,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
     const urlToFile = async (url, filename) => {
         try {
             const fullUrl = url.startsWith('/') ? `${API_BASE_URL}${url}` : url;
-            const response = await fetch(fullUrl);
+            const response = await fetchWithAuth(fullUrl);
             const blob = await response.blob();
             if (blob.type.startsWith('text/html')) {
                 throw new Error('Fetched HTML instead of image (likely 404)');

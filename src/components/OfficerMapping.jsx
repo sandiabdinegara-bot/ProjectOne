@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Building2, RefreshCw, Layers, MapPin } from 'lucide-react';
 import Swal from 'sweetalert2';
 import SearchableSelect from './common/SearchableSelect';
+import { fetchWithAuth } from '../api';
 
 export default function OfficerMapping() {
     const [branches, setBranches] = useState([]);
@@ -19,7 +20,7 @@ export default function OfficerMapping() {
 
     const fetchBranches = async () => {
         try {
-            const res = await fetch('./api/options.php?type=cabang');
+            const res = await fetchWithAuth('./api/options.php?type=cabang');
             const data = await res.json();
             setBranches(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -33,7 +34,7 @@ export default function OfficerMapping() {
             return;
         }
         try {
-            const res = await fetch(`./api/officers.php?branch_code=${branchCode}`);
+            const res = await fetchWithAuth(`./api/officers.php?branch_code=${branchCode}`);
             const data = await res.json();
             setOfficers(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -49,7 +50,7 @@ export default function OfficerMapping() {
 
         setLoading(true);
         try {
-            const res = await fetch(`./api/customers.php?officer_id=${officerId}`);
+            const res = await fetchWithAuth(`./api/customers.php?officer_id=${officerId}`);
             const data = await res.json();
             const validData = Array.isArray(data) ? data : [];
             setCustomers(validData);

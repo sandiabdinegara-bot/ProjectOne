@@ -12,9 +12,12 @@ import Swal from 'sweetalert2';
 
 
 
-const API_URL = './api/recordings.php';
+import { BASE_URL } from '../config';
+import { fetchWithAuth } from '../api';
+
 const CUSTOMER_API = './api/customers.php';
-const API_BASE_URL = 'http://localhost'; // Base URL for absolute paths (XAMPP)
+const API_BASE_URL = BASE_URL;
+const API_URL = `${BASE_URL}/pencatatan`;
 
 const ALL_COLUMNS = [
     { id: 'id_sambungan', label: 'NO. SAMBUNGAN' },
@@ -121,7 +124,7 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const fetchOfficers = async () => {
         try {
-            const res = await fetch('./api/officers.php');
+            const res = await fetchWithAuth('./api/officers.php');
             const data = await res.json();
             setOfficers(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -131,7 +134,7 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const fetchStatusKondisi = async () => {
         try {
-            const res = await fetch('./api/options.php?type=status_kondisi');
+            const res = await fetchWithAuth('./api/options.php?type=status_kondisi');
             const data = await res.json();
             setStatusKondisiOptions(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -142,7 +145,7 @@ export default function RecordingManagement({ isHistory = false }) {
     const fetchRecordings = async () => {
         try {
             setLoading(true);
-            const res = await fetch(API_URL);
+            const res = await fetchWithAuth(API_URL);
             const data = await res.json();
             setRecordings(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -154,7 +157,7 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const fetchCustomers = async () => {
         try {
-            const res = await fetch(CUSTOMER_API);
+            const res = await fetchWithAuth(CUSTOMER_API);
             const data = await res.json();
             setCustomers(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -197,7 +200,7 @@ export default function RecordingManagement({ isHistory = false }) {
             formDataAi.append('image', imageFile);
             formDataAi.append('user_input', userInput);
 
-            const response = await fetch('http://localhost:5000/validate', {
+            const response = await fetchWithAuth('http://localhost:5000/validate', {
                 method: 'POST',
                 body: formDataAi
             });
@@ -227,7 +230,7 @@ export default function RecordingManagement({ isHistory = false }) {
     const urlToFile = async (url, filename) => {
         try {
             const fullUrl = url.startsWith('/') ? `${API_BASE_URL}${url}` : url;
-            const response = await fetch(fullUrl);
+            const response = await fetchWithAuth(fullUrl);
             const blob = await response.blob();
             if (blob.type.startsWith('text/html')) {
                 throw new Error('Fetched HTML instead of image (likely 404)');
@@ -270,7 +273,7 @@ export default function RecordingManagement({ isHistory = false }) {
         const officer = officers.find(o => o.nama === officerName);
         if (officer) {
             try {
-                const res = await fetch(`./api/customers.php?officer_id=${officer.id}`);
+                const res = await fetchWithAuth(`./api/customers.php?officer_id=${officer.id}`);
                 const data = await res.json();
                 setFilteredCustomersForForm(Array.isArray(data) ? data : []);
             } catch (err) {
@@ -314,7 +317,7 @@ export default function RecordingManagement({ isHistory = false }) {
             // Fetch officers for this customer's route
             if (customer.kode_rute) {
                 try {
-                    const res = await fetch(`./api/officers.php?route_code=${customer.kode_rute}`);
+                    const res = await fetchWithAuth(`./api/officers.php?route_code=${customer.kode_rute}`);
                     const data = await res.json();
                     setOfficers(Array.isArray(data) ? data : []);
 
@@ -346,13 +349,13 @@ export default function RecordingManagement({ isHistory = false }) {
             const customer = customers.find(c => c.id == recording.id_pelanggan);
             if (customer && customer.kode_rute) {
                 try {
-                    const res = await fetch(`./api/officers.php?route_code=${customer.kode_rute}`);
+                    const res = await fetchWithAuth(`./api/officers.php?route_code=${customer.kode_rute}`);
                     const data = await res.json();
                     let filteredOfficers = Array.isArray(data) ? data : [];
 
                     // Ensure the original officer is in the list even if they don't match the route assignment
                     if (recording.petugas && !filteredOfficers.some(o => o.nama === recording.petugas)) {
-                        const allRes = await fetch('./api/officers.php');
+                        const allRes = await fetchWithAuth('./api/officers.php');
                         const allData = await allRes.json();
                         const originalOfficer = (allData || []).find(o => o.nama === recording.petugas);
                         if (originalOfficer) filteredOfficers.push(originalOfficer);
@@ -529,7 +532,7 @@ export default function RecordingManagement({ isHistory = false }) {
                 }
             });
 
-            const res = await fetch(url, { method: 'POST', body });
+            const res = await fetchWithAuth(url, { method: 'POST', body });
             const data = await res.json();
             if (data.message) {
                 Swal.fire({
@@ -565,7 +568,7 @@ export default function RecordingManagement({ isHistory = false }) {
         if (!result.isConfirmed) return;
 
         try {
-            const res = await fetch(`${API_URL}?id=${id}`, { method: 'DELETE' });
+            const res = await fetchWithAuth(`${API_URL}?id=${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.message) {
                 Swal.fire({

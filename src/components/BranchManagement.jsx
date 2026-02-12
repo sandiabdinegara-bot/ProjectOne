@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Edit2, Trash2, Building2, CheckCircle, AlertCircle, Loader2, List, X, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Building2, CheckCircle, AlertCircle, Loader2, List, X, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ChevronLeft, ChevronRight } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import { BASE_URL, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../config';
+import { fetchWithAuth } from '../api';
 
-const API_URL = './api/branches.php';
+const API_URL = `${BASE_URL}/cabang`;
 
 const ALL_COLUMNS = [
     { id: 'kode_cabang', label: 'Kode Cabang' },
@@ -20,6 +19,15 @@ export default function BranchManagement() {
     const [branches, setBranches] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchInput, setSearchInput] = useState(''); // for controlled input; submit triggers fetch
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(() => {
+        const saved = localStorage.getItem('pdam_branches_page_size');
+        return saved ? parseInt(saved, 10) : DEFAULT_PAGE_SIZE;
+    });
+    const [total, setTotal] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [exporting, setExporting] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [deletingId, setDeletingId] = useState(null);
@@ -53,6 +61,10 @@ export default function BranchManagement() {
     }, [visibleColumns]);
 
     useEffect(() => {
+        localStorage.setItem('pdam_branches_page_size', String(limit));
+    }, [limit]);
+
+    useEffect(() => {
         const handleClickOutside = (event) => {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target)) {
                 setIsColumnMenuOpen(false);
@@ -67,22 +79,54 @@ export default function BranchManagement() {
         setTimeout(() => setNotification(null), 3000);
     }, []);
 
-    const fetchBranches = async () => {
+    const fetchBranches = useCallback(async (pageNum, pageLimit, search) => {
         try {
             setLoading(true);
-            const res = await fetch(API_URL);
-            const data = await res.json();
-            setBranches(data);
+            const params = new URLSearchParams();
+            params.set('page', String(pageNum));
+            params.set('limit', String(pageLimit));
+            if (search && search.trim()) params.set('search', search.trim());
+            const res = await fetchWithAuth(`${API_URL}?${params.toString()}`);
+            const json = await res.json();
+            // Support both paginated response { data, total, page, totalPages } and legacy array
+            if (Array.isArray(json)) {
+                setBranches(json);
+                setTotal(json.length);
+                setTotalPages(1);
+            } else {
+                setBranches(json.data || []);
+                setTotal(json.total ?? 0);
+                setPage(json.page ?? pageNum);
+                setTotalPages(json.totalPages ?? (Math.ceil((json.total || 0) / pageLimit) || 1));
+            }
         } catch (err) {
             console.error('Failed to fetch:', err);
             showNotification('Gagal mengambil data cabang', 'error');
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        fetchBranches();
+        fetchBranches(page, limit, searchTerm);
+    }, [page, limit, searchTerm, fetchBranches]);
+
+    const applySearch = useCallback(() => {
+        const trimmed = searchInput.trim();
+        if (trimmed !== searchTerm) {
+            setSearchTerm(trimmed);
+            setPage(1);
+        }
+    }, [searchInput, searchTerm]);
+
+    const handlePageChange = useCallback((newPage) => {
+        setPage(prev => Math.max(1, Math.min(newPage, totalPages)));
+    }, [totalPages]);
+
+    const handleLimitChange = useCallback((e) => {
+        const newLimit = parseInt(e.target.value, 10);
+        setLimit(newLimit);
+        setPage(1);
     }, []);
 
     const handleOpenModal = (branch = null) => {
@@ -108,20 +152,25 @@ export default function BranchManagement() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const method = editingBranch ? 'PUT' : 'POST';
-        const url = editingBranch ? `${API_URL}?id=${editingBranch.id}` : API_URL;
+        const isUpdate = !!editingBranch;
+        const url = isUpdate ? `${API_URL}/${editingBranch.id}` : API_URL;
+        const method = isUpdate ? 'PATCH' : 'POST';
 
         try {
-            const res = await fetch(url, {
+            const res = await fetchWithAuth(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             });
-            const data = await res.json();
-            if (data.message) {
-                fetchBranches();
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 401) {
+                showNotification('Token tidak valid atau kedaluwarsa', 'error');
+                return;
+            }
+            if (res.status === 201 || res.status === 200) {
+                fetchBranches(page, limit, searchTerm);
                 handleCloseModal();
-                showNotification(editingBranch ? 'Cabang berhasil diperbarui' : 'Cabang berhasil ditambahkan');
+                showNotification(isUpdate ? 'Cabang berhasil diperbarui' : 'Cabang berhasil ditambahkan');
             } else if (data.error) {
                 showNotification(data.error, 'error');
             }
@@ -138,13 +187,26 @@ export default function BranchManagement() {
 
     const handleConfirmDelete = async () => {
         try {
-            const res = await fetch(`${API_URL}?id=${deletingId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.message) {
-                fetchBranches();
+            const res = await fetchWithAuth(`${API_URL}/${deletingId}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 401) {
+                showNotification('Token tidak valid atau kedaluwarsa', 'error');
+                return;
+            }
+            if (res.status === 404) {
+                showNotification('Data cabang tidak ditemukan', 'error');
+                setIsConfirmOpen(false);
+                setDeletingId(null);
+                fetchBranches(page, limit, searchTerm);
+                return;
+            }
+            if (res.status === 200) {
+                setIsConfirmOpen(false);
+                setDeletingId(null);
+                fetchBranches(page, limit, searchTerm);
                 showNotification('Cabang berhasil dihapus');
             } else {
-                showNotification('Gagal menghapus cabang', 'error');
+                showNotification(data.error || 'Gagal menghapus cabang', 'error');
             }
         } catch (err) {
             console.error('Delete failed:', err);
@@ -158,7 +220,7 @@ export default function BranchManagement() {
         setLoadingRoutes(true);
 
         try {
-            const res = await fetch(`./api/branch_routes.php?kode_cabang=${branch.kode_cabang}`);
+            const res = await fetchWithAuth(`./api/branch_routes.php?kode_cabang=${branch.kode_cabang}`);
             const data = await res.json();
             setAllRoutes(data);
             setAssignedRoutes(data.filter(r => r.assigned).map(r => r.kode_rute));
@@ -198,7 +260,7 @@ export default function BranchManagement() {
 
     const handleSaveRoutes = async () => {
         try {
-            const res = await fetch('./api/branch_routes.php', {
+            const res = await fetchWithAuth('./api/branch_routes.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -219,87 +281,105 @@ export default function BranchManagement() {
         }
     };
 
-    // Export Logic
-    const exportToCSV = () => {
-        const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
-        const headers = visibleCols.map(c => c.label);
-        const rows = filteredBranches.map(b => visibleCols.map(col => b[col.id] || '-'));
+    // Backend export: same filters as list (search). Columns optional.
+    const buildExportParams = useCallback((format) => {
+        const params = new URLSearchParams();
+        params.set('format', format);
+        if (searchTerm && searchTerm.trim()) params.set('search', searchTerm.trim());
+        if (visibleColumns.length) params.set('columns', visibleColumns.join(','));
+        return params.toString();
+    }, [searchTerm, visibleColumns]);
 
-        const csvContent = [headers, ...rows].map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `data_cabang_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const exportToExcel = () => {
-        const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
-        const data = filteredBranches.map(b => {
-            const item = {};
-            visibleCols.forEach(col => {
-                item[col.label] = b[col.id] || '-';
-            });
-            return item;
-        });
-
-        const worksheet = XLSX.utils.json_to_sheet(data);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Cabang");
-        XLSX.writeFile(workbook, `data_cabang_${new Date().toISOString().split('T')[0]}.xlsx`);
-    };
-
-    const exportToPDF = () => {
+    const exportToCSV = async () => {
         try {
-            const doc = new jsPDF('p', 'mm', 'a4');
-            const now = new Date().toLocaleString('id-ID');
-
-            doc.setFontSize(18);
-            doc.setTextColor(14, 165, 233);
-            doc.text("Laporan Data Cabang PDAM", 14, 15);
-
-            doc.setFontSize(10);
-            doc.setTextColor(100);
-            doc.text(`Jumlah Total: ${filteredBranches.length} Cabang`, 14, 22);
-            doc.text(`Waktu Cetak: ${now}`, 196, 22, { align: 'right' });
-
-            const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
-            const tableColumn = ["No", ...visibleCols.map(c => c.label)];
-            const tableRows = filteredBranches.map((b, index) => [
-                index + 1,
-                ...visibleCols.map(col => b[col.id] || '-')
-            ]);
-
-            autoTable(doc, {
-                head: [tableColumn],
-                body: tableRows,
-                startY: 28,
-                theme: 'grid',
-                styles: { fontSize: 9, cellPadding: 2 },
-                headStyles: { fillColor: [241, 245, 249], textColor: [100, 116, 139], fontStyle: 'bold' },
-            });
-
-            doc.save(`data_cabang_${new Date().toISOString().split('T')[0]}.pdf`);
+            setExporting(true);
+            const qs = buildExportParams('csv');
+            const url = `${API_URL}/export?${qs}`;
+            const res = await fetchWithAuth(url);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `data_cabang_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(downloadUrl);
+            showNotification('Export CSV berhasil');
         } catch (err) {
-            console.error('PDF Export Error:', err);
-            showNotification('Gagal mengekspor PDF', 'error');
+            console.error('Export CSV failed:', err);
+            showNotification('Gagal export CSV', 'error');
+        } finally {
+            setExporting(false);
         }
     };
 
-    const handlePrint = () => {
-        window.print();
+    const exportToExcel = async () => {
+        try {
+            setExporting(true);
+            const qs = buildExportParams('xlsx');
+            const url = `${API_URL}/export?${qs}`;
+            const res = await fetchWithAuth(url);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `data_cabang_${new Date().toISOString().split('T')[0]}.xlsx`;
+            link.click();
+            URL.revokeObjectURL(downloadUrl);
+            showNotification('Export Excel berhasil');
+        } catch (err) {
+            console.error('Export Excel failed:', err);
+            showNotification('Gagal export Excel', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
 
-    const filteredBranches = branches.filter(b =>
-        (b.cabang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.kode_cabang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.alamat || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.telepon || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const exportToPDF = async () => {
+        try {
+            setExporting(true);
+            const qs = buildExportParams('pdf');
+            const url = `${API_URL}/export?${qs}`;
+            const res = await fetchWithAuth(url);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `data_cabang_${new Date().toISOString().split('T')[0]}.pdf`;
+            link.click();
+            URL.revokeObjectURL(downloadUrl);
+            showNotification('Export PDF berhasil');
+        } catch (err) {
+            console.error('Export PDF failed:', err);
+            showNotification('Gagal export PDF', 'error');
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const handlePrint = async () => {
+        try {
+            setExporting(true);
+            const params = new URLSearchParams();
+            params.set('print', '1');
+            if (searchTerm && searchTerm.trim()) params.set('search', searchTerm.trim());
+            const url = `${API_URL}/export?format=pdf&${params.toString()}`;
+            const res = await fetchWithAuth(url);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const printUrl = URL.createObjectURL(blob);
+            const w = window.open(printUrl, '_blank');
+            if (w) w.onload = () => { w.print(); };
+            URL.revokeObjectURL(printUrl);
+        } catch (err) {
+            console.error('Print failed:', err);
+            showNotification('Gagal memuat dokumen untuk cetak', 'error');
+        } finally {
+            setExporting(false);
+        }
+    };
 
     return (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
@@ -338,16 +418,16 @@ export default function BranchManagement() {
                 </div>
                 <div className="header-actions no-print" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn btn-outline" onClick={exportToCSV} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <Download size={18} />
+                        <button className="btn btn-outline" onClick={exportToCSV} disabled={exporting} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                            {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
                         </button>
-                        <button className="btn btn-outline" onClick={exportToExcel} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                        <button className="btn btn-outline" onClick={exportToExcel} disabled={exporting} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
                             <FileSpreadsheet size={18} />
                         </button>
-                        <button className="btn btn-outline" onClick={exportToPDF} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                        <button className="btn btn-outline" onClick={exportToPDF} disabled={exporting} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
                             <FileText size={18} />
                         </button>
-                        <button className="btn btn-outline" onClick={handlePrint} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                        <button className="btn btn-outline" onClick={handlePrint} disabled={exporting} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
                             <Printer size={18} />
                         </button>
                     </div>
@@ -456,12 +536,12 @@ export default function BranchManagement() {
                         )}
                     </div>
 
-                    <div style={{ position: 'relative', flex: '0 1 350px' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+                    <div style={{ position: 'relative', flex: '0 1 350px', display: 'flex', gap: '0.5rem' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)', pointerEvents: 'none' }} />
                         <input
                             style={{
                                 paddingLeft: '2.5rem',
-                                paddingRight: searchTerm ? '2.5rem' : '0.625rem',
+                                paddingRight: '0.625rem',
                                 height: '42px',
                                 borderRadius: '8px',
                                 border: '1px solid var(--border)',
@@ -469,10 +549,14 @@ export default function BranchManagement() {
                                 width: '100%',
                                 background: '#f8fafc'
                             }}
-                            placeholder="Cari cabang, alamat atau telepon..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Cari cabang, kode, alamat atau telepon..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && applySearch()}
                         />
+                        <button type="button" className="btn btn-primary" onClick={applySearch} style={{ height: '42px', padding: '0 1rem', borderRadius: '8px', whiteSpace: 'nowrap' }}>
+                            Cari
+                        </button>
                     </div>
                 </div>
 
@@ -495,9 +579,9 @@ export default function BranchManagement() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredBranches.length > 0 ? filteredBranches.map((branch, index) => (
+                                {branches.length > 0 ? branches.map((branch, index) => (
                                     <tr key={branch.id} style={{ transition: 'background-color 0.2s' }}>
-                                        <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', fontWeight: 500, color: '#64748b', fontSize: '0.875rem' }}>{index + 1}</td>
+                                        <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', fontWeight: 500, color: '#64748b', fontSize: '0.875rem' }}>{(page - 1) * limit + index + 1}</td>
                                         {visibleColumns.includes('kode_cabang') && (
                                             <td style={{ padding: '0.625rem 0.75rem', fontWeight: 600, color: 'var(--text)', textAlign: 'center' }}>
                                                 <span style={{ background: '#f1f5f9', color: '#1e293b', padding: '0.2rem 0.625rem', borderRadius: '4px', fontSize: '0.8125rem', border: '1px solid #e2e8f0' }}>
@@ -564,6 +648,67 @@ export default function BranchManagement() {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                )}
+
+                {/* Pagination - page size option always shown */}
+                {!loading && (
+                    <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '1rem',
+                        marginTop: '1rem',
+                        paddingTop: '1rem',
+                        borderTop: '1px solid var(--border)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>
+                                Tampilkan
+                            </span>
+                            <select
+                                value={limit}
+                                onChange={handleLimitChange}
+                                style={{
+                                    padding: '0.375rem 0.75rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border)',
+                                    fontSize: '0.875rem',
+                                    background: '#fff'
+                                }}
+                            >
+                                {PAGE_SIZE_OPTIONS.map(n => (
+                                    <option key={n} value={n}>{n}</option>
+                                ))}
+                            </select>
+                            <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>
+                                per halaman. Total: <strong style={{ color: 'var(--text)' }}>{total}</strong> cabang
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                disabled={page <= 1}
+                                onClick={() => handlePageChange(page - 1)}
+                                style={{ padding: '0.5rem', borderRadius: '6px', minWidth: '36px' }}
+                            >
+                                <ChevronLeft size={18} />
+                            </button>
+                            <span style={{ padding: '0 0.75rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                                Halaman {page} dari {totalPages || 1}
+                            </span>
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                disabled={page >= totalPages}
+                                onClick={() => handlePageChange(page + 1)}
+                                style={{ padding: '0.5rem', borderRadius: '6px', minWidth: '36px' }}
+                            >
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

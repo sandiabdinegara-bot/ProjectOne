@@ -6,8 +6,11 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 
+import { BASE_URL } from '../config';
+import { fetchWithAuth } from '../api';
+
 const API_URL = './api/customers.php';
-const API_BASE_URL = 'http://localhost'; // Base URL for absolute paths (XAMPP)
+const API_BASE_URL = BASE_URL;
 
 const ALL_COLUMNS = [
     { id: 'id_sambungan', label: 'NO. SAMBUNGAN' },
@@ -95,7 +98,7 @@ export default function CustomerManagement() {
     const fetchCustomers = async () => {
         try {
             setLoading(true);
-            const res = await fetch(API_URL);
+            const res = await fetchWithAuth(API_URL);
             const data = await res.json();
             setCustomers(data);
         } catch (err) {
@@ -110,7 +113,7 @@ export default function CustomerManagement() {
         let url = `./api/zones.php?${queryParams.toString()}`;
 
         try {
-            const res = await fetch(url);
+            const res = await fetchWithAuth(url);
             return await res.json();
         } catch (err) {
             console.error(`Failed to fetch ${type}:`, err);
@@ -121,7 +124,7 @@ export default function CustomerManagement() {
     const fetchOptions = async (type, params = {}) => {
         const queryParams = new URLSearchParams({ type, ...params });
         try {
-            const res = await fetch(`./api/options.php?${queryParams.toString()}`);
+            const res = await fetchWithAuth(`./api/options.php?${queryParams.toString()}`);
             const data = await res.json();
             return data;
         } catch (err) {
@@ -298,7 +301,7 @@ export default function CustomerManagement() {
                 }
             });
 
-            const res = await fetch(url, {
+            const res = await fetchWithAuth(url, {
                 method: 'POST',
                 body: body
             });
@@ -337,7 +340,7 @@ export default function CustomerManagement() {
         if (!result.isConfirmed) return;
 
         try {
-            const res = await fetch(`${API_URL}?id=${id}`, { method: 'DELETE' });
+            const res = await fetchWithAuth(`${API_URL}?id=${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.message) {
                 Swal.fire({

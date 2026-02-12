@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Building2, Droplets, Menu, X, User, History, BarChart2, ChevronDown } from 'lucide-react';
+import { Droplets, Menu, X, User, History, BarChart2, ChevronDown, LogOut,  CheckCheck, Database, ShieldAlert, ClipboardList } from 'lucide-react';
 import CustomerManagement from './components/CustomerManagement';
 import BranchManagement from './components/BranchManagement';
 import RecordingManagement from './components/RecordingManagement';
 import OfficerManagement from './components/OfficerManagement';
 import OfficerMapping from './components/OfficerMapping';
 import MeterAnalysis from './components/MeterAnalysis';
+import LoginPage from './components/LoginPage';
+import { AUTH_KEY, TOKEN_KEY, USER_KEY, isAuthenticated as checkAuth, clearExpiredAuth } from './auth';
 
+function logout() {
+  localStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem(AUTH_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
+}
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(checkAuth);
   const [activeTab, setActiveTab] = useState(localStorage.getItem('pdam_active_tab') || 'pelanggan');
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [expandedMenus, setExpandedMenus] = useState(['analisa']); // Keep analisa expanded by default or from storage
+
+  useEffect(() => {
+    clearExpiredAuth();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('pdam_active_tab', activeTab);
@@ -31,27 +46,33 @@ export default function App() {
   }, []);
 
   const menuItems = [
+    { id: 'catat', label: 'Pencatatan Meter Berjalan', icon: <Droplets size={20} /> },
+    { id: 'history_catat', label: 'Histori Pencatatan Meter', icon: <History size={20} /> },
+    { id: 'analisa_review', label: 'Analisa Pencatatan Meter', icon: <BarChart2 size={20} /> },
+    { id: 'analisa_review', label: 'Koreksi Pencatatan Meter', icon: <CheckCheck size={20} /> },
+    { id: 'analisa_kebocoran', label: 'Analisa Kebocoran', icon: <ShieldAlert size={20} /> },
+    {
+      id: 'laporan_parent',
+      label: 'Laporan',
+      icon: <ClipboardList size={20} />,
+      subItems: [
+        { id: 'cabang', label: 'Laporan Produktivitas' },
+        { id: 'user', label: 'Laporan Debit Air' },
+        { id: 'petugas', label: 'Laporan Distribusi' },
+      ]
+    },
     {
       id: 'cabang_parent',
-      label: 'Data Cabang',
-      icon: <Building2 size={20} />,
+      label: 'Data Master',
+      icon: <Database size={20} />,
       subItems: [
-        { id: 'cabang', label: 'Daftar Cabang' },
-        { id: 'petugas', label: 'Daftar Petugas' },
-        { id: 'petugas_mapping', label: 'Pemetaan Tugas' },
+        { id: 'cabang', label: 'Data Cabang' },
+        { id: 'user', label: 'Data User' },
+        { id: 'petugas', label: 'Data Petugas' },
+        { id: 'pelanggan', label: 'Data Pelanggan' },
+        { id: 'petugas_mapping', label: 'Data Rute' },
       ]
     },
-    { id: 'pelanggan', label: 'Data Pelanggan', icon: <Users size={20} /> },
-    { id: 'catat', label: 'Pencatatan Meter Berjalan', icon: <Droplets size={20} /> },
-    {
-      id: 'analisa',
-      label: 'Analisa Baca Meter',
-      icon: <BarChart2 size={20} />,
-      subItems: [
-        { id: 'analisa_review', label: 'Daftar Koreksi ABM' },
-      ]
-    },
-    { id: 'history_catat', label: 'History Pencatatan', icon: <History size={20} /> },
   ];
 
   const handleTabClick = (id) => {
@@ -64,6 +85,12 @@ export default function App() {
       prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
     );
   };
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />
+    );
+  }
 
   return (
     <div className="app-layout">
@@ -177,6 +204,13 @@ export default function App() {
             );
           })}
         </nav>
+
+        <div className="sidebar-footer">
+          <button type="button" className="sidebar-logout" onClick={() => { logout(); setIsAuthenticated(false); }}>
+            <LogOut size={20} />
+            {(isSidebarOpen || isMobile) && <span>Keluar</span>}
+          </button>
+        </div>
 
         {!isMobile && (
           <button

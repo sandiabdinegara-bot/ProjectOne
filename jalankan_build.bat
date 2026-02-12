@@ -34,6 +34,8 @@ if not exist assets mkdir assets
 
 xcopy /s /e /y dist\assets\* assets\ > nul
 copy /y dist\* . > nul
+REM Restore dev entry so "npm run dev" loads source (not built assets)
+copy /y index.html.src index.html > nul
 
 echo [3/3] Selesai!
 echo.

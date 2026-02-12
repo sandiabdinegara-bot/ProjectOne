@@ -12,6 +12,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path
       },
+      '/user': {
+        target: 'http://localhost/PDAM_app',
+        changeOrigin: true,
+        rewrite: (path) => path
+      },
       '/uploads': {
         target: 'http://localhost/PDAM_app',
         changeOrigin: true,
