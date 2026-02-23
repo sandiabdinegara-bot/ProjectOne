@@ -25,7 +25,7 @@ try {
         case 'GET':
             $officer_id = $_GET['officer_id'] ?? null;
             if (isset($_GET['id'])) {
-                $stmt = $conn->prepare("SELECT * FROM data_pelanggan WHERE id = ?");
+                $stmt = $conn->prepare("SELECT * FROM data_pelanggan WHERE id = ? AND deleted_at IS NULL"); // Add check
                 $stmt->execute([$_GET['id']]);
                 $row = $stmt->fetch(PDO::FETCH_ASSOC);
                 // ... (foto handling remains same)
@@ -39,16 +39,54 @@ try {
                 }
                 echo json_encode($row);
             } else {
+                // Unified Query Builder
+                $search = $_GET['search'] ?? '';
+                $kode_rute = $_GET['kode_rute'] ?? '';
+                $kode_cabang = $_GET['kode_cabang'] ?? '';
+                $params = [];
+                $limit_clause = "";
+
+                $sql = "SELECT dp.*, c.cabang as nama_cabang 
+                    FROM data_pelanggan dp
+                    LEFT JOIN cabang c ON dp.kode_cabang = c.kode_cabang
+                    WHERE dp.deleted_at IS NULL";
+
+                // 1. Officer Filter
                 if ($officer_id) {
-                    $sql = "SELECT * FROM data_pelanggan 
-                        WHERE kode_rute IN (SELECT TRIM(TRAILING ',' FROM kode_rute) FROM data_wilayah_petugas WHERE id_petugas = ?)
-                        ORDER BY id ASC";
-                    $stmt = $conn->prepare($sql);
-                    $stmt->execute([$officer_id]);
-                } else {
-                    $sql = "SELECT * FROM data_pelanggan ORDER BY id ASC";
-                    $stmt = $conn->query($sql);
+                    $sql .= " AND dp.kode_rute IN (SELECT TRIM(TRAILING ',' FROM kode_rute) FROM data_wilayah_petugas WHERE id_petugas = ?)";
+                    $params[] = $officer_id;
                 }
+
+                // 2. Route Filter
+                if (!empty($kode_rute)) {
+                    $sql .= " AND dp.kode_rute = ?";
+                    $params[] = $kode_rute;
+                }
+
+                // 3. Branch Filter
+                if (!empty($kode_cabang)) {
+                    $sql .= " AND dp.kode_cabang = ?";
+                    $params[] = $kode_cabang;
+                }
+
+                // 4. Search Filter (Autocomplete)
+                if (!empty($search)) {
+                    $sql .= " AND (dp.nama LIKE ? OR dp.id_sambungan LIKE ? OR dp.alamat LIKE ?)";
+                    $term = "%$search%";
+                    $params[] = $term;
+                    $params[] = $term;
+                    $params[] = $term;
+                    $limit_clause = " LIMIT 100"; // Increased limit for search
+                }
+                // Safety Limit if no filters provided to prevent crashing
+                elseif (!$officer_id && empty($kode_rute) && empty($kode_cabang)) {
+                    $limit_clause = " LIMIT 1000";
+                }
+
+                $sql .= " ORDER BY dp.id ASC" . $limit_clause;
+
+                $stmt = $conn->prepare($sql);
+                $stmt->execute($params);
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                 // Additional paths for fallback (Check Recording Photos if Master Photo missing)
@@ -97,6 +135,7 @@ try {
 
         case 'POST':
         case 'PUT':
+            // ... (POST logic unchanged until delete) ...
             // Read data from POST or JSON body
             $data = !empty($_POST) ? $_POST : json_decode(file_get_contents('php://input'), true);
             $id = $_GET['id'] ?? ($data['id'] ?? null);
@@ -222,9 +261,10 @@ try {
             if (!isset($_GET['id'])) {
                 throw new Exception("ID is required");
             }
-            $stmt = $conn->prepare("DELETE FROM data_pelanggan WHERE id = ?");
+            // Soft Delete
+            $stmt = $conn->prepare("UPDATE data_pelanggan SET deleted_at = NOW() WHERE id = ?");
             $stmt->execute([$_GET['id']]);
-            echo json_encode(["message" => "Customer deleted successfully"]);
+            echo json_encode(["message" => "Customer soft deleted successfully"]);
             break;
     }
 } catch (Exception $e) {

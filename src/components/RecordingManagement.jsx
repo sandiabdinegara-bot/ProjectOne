@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Droplets, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileSpreadsheet, FileText, Printer, X, User, Camera, Upload, SlidersHorizontal, ChevronDown, Calendar, HardDrive, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import SimpleImageViewer from './common/SimpleImageViewer';
+import { Plus, Search, Edit2, Trash2, Droplets, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileSpreadsheet, FileText, Printer, X, User, Camera, Upload, SlidersHorizontal, ChevronDown, Calendar, HardDrive, MapPin, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import SearchableSelect from './common/SearchableSelect';
 import CustomDatePicker from './common/CustomDatePicker';
 import MonthYearPicker from './common/MonthYearPicker';
-import { subMonths, startOfMonth } from 'date-fns';
+import { subMonths, startOfMonth, format } from 'date-fns';
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -11,6 +12,8 @@ import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 
 
+
+import useImageRotator from '../hooks/useImageRotator';
 
 const API_URL = './api/recordings.php';
 const CUSTOMER_API = './api/customers.php';
@@ -34,17 +37,29 @@ const ALL_COLUMNS = [
 const DEFAULT_COLUMNS = ['id_sambungan', 'nama', 'id_meter', 'alamat', 'stan_akhir', 'pemakaian', 'petugas', 'foto', 'foto_rumah', 'status_laporan', 'koordinat', 'update_date'];
 
 export default function RecordingManagement({ isHistory = false }) {
+    // Data States
     const [recordings, setRecordings] = useState([]);
-    const [customers, setCustomers] = useState([]);
-    const [filteredCustomersForForm, setFilteredCustomersForForm] = useState([]);
+    const [totalPages, setTotalPages] = useState(0);
+    const [totalRecords, setTotalRecords] = useState(0);
+
+    // Dropdown / Form States
+    const [customers, setCustomers] = useState([]); // Now used for search results only
+    const [filteredCustomersForForm, setFilteredCustomersForForm] = useState([]); // Kept for compatibility but synced with customers
+    const [officers, setOfficers] = useState([]);
+    const [statusKondisiOptions, setStatusKondisiOptions] = useState([]);
+
+    // UI States
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
+    const { saveRotation } = useImageRotator();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRecording, setEditingRecording] = useState(null);
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [isSearchMenuOpen, setIsSearchMenuOpen] = useState(false);
+
+    // Refs
     const columnMenuRef = useRef(null);
     const searchMenuRef = useRef(null);
+    const customerDropdownRef = useRef(null);
 
     // Column Visibility State
     const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -52,10 +67,21 @@ export default function RecordingManagement({ isHistory = false }) {
         return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
     });
 
-    // Pagination State
+    // Pagination State (Server-Side)
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
-    const [searchCategory, setSearchCategory] = useState('nama');
+
+    // Filter State
+    const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [searchCategory, setSearchCategory] = useState('nama'); // Not used much in server-search unless API supports it
+    const [filterDate, setFilterDate] = useState(new Date());
+    const [selectedMonth, setSelectedMonth] = useState(() => subMonths(startOfMonth(new Date()), 1));
+
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState({ key: 'update_date', direction: 'desc' });
+
+    // AI & File States
     const [fotoPreview, setFotoPreview] = useState(null);
     const [fotoRumahPreview, setFotoRumahPreview] = useState(null);
     const [previewImage, setPreviewImage] = useState(null);
@@ -63,15 +89,13 @@ export default function RecordingManagement({ isHistory = false }) {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [selectedFile, setSelectedFile] = useState(null);
     const [selectedFileRumah, setSelectedFileRumah] = useState(null);
-
-    // AI OCR States
     const [ocrResult, setOcrResult] = useState(null);
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [aiDebugImage, setAiDebugImage] = useState(null);
+
+    // Form Dropdown State
     const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
     const [customerSearch, setCustomerSearch] = useState('');
-    const customerDropdownRef = useRef(null);
-
 
     const [formData, setFormData] = useState({
         id_pelanggan: '',
@@ -93,40 +117,70 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const [customerHistory, setCustomerHistory] = useState([]);
 
-    const [officers, setOfficers] = useState([]);
-    const [statusKondisiOptions, setStatusKondisiOptions] = useState([]);
+    // Sorting Helpers
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
 
+    const getSortIcon = (key) => {
+        if (sortConfig.key !== key) return <ArrowUpDown size={14} style={{ opacity: 0.3 }} />;
+        if (sortConfig.direction === 'asc') return <ArrowUp size={14} />;
+        return <ArrowDown size={14} />;
+    };
+
+    // --- Effects ---
+
+    // 1. Initial Load (Static Data)
     useEffect(() => {
-        fetchRecordings();
-        fetchCustomers();
         fetchOfficers();
         fetchStatusKondisi();
+        // Do NOT fetch all customers initially
     }, []);
 
+    // 2. Debounce Search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+            setCurrentPage(1); // Reset to page 1 on new search
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (isCustomerDropdownOpen) fetchCustomers(customerSearch);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [customerSearch, isCustomerDropdownOpen]);
+
+    // 3. Fetch Data when Params Change
+    useEffect(() => {
+        fetchRecordings();
+    }, [currentPage, itemsPerPage, debouncedSearch, sortConfig, isHistory, filterDate, selectedMonth]);
+
+    // Handle Click Outside
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (columnMenuRef.current && !columnMenuRef.current.contains(event.target)) {
-                setIsColumnMenuOpen(false);
-            }
-            if (searchMenuRef.current && !searchMenuRef.current.contains(event.target)) {
-                setIsSearchMenuOpen(false);
-            }
-            if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target)) {
-                setIsCustomerDropdownOpen(false);
-            }
+            if (columnMenuRef.current && !columnMenuRef.current.contains(event.target)) setIsColumnMenuOpen(false);
+            if (searchMenuRef.current && !searchMenuRef.current.contains(event.target)) setIsSearchMenuOpen(false);
+            if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target)) setIsCustomerDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // --- Fetch Functions ---
 
     const fetchOfficers = async () => {
         try {
             const res = await fetch('./api/officers.php');
             const data = await res.json();
             setOfficers(Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error('Failed to fetch officers:', err);
-        }
+        } catch (err) { console.error('Failed to fetch officers:', err); }
     };
 
     const fetchStatusKondisi = async () => {
@@ -134,58 +188,109 @@ export default function RecordingManagement({ isHistory = false }) {
             const res = await fetch('./api/options.php?type=status_kondisi');
             const data = await res.json();
             setStatusKondisiOptions(Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error('Failed to fetch status kondisi:', err);
-        }
+        } catch (err) { console.error('Failed to fetch status kondisi:', err); }
     };
 
     const fetchRecordings = async () => {
         try {
             setLoading(true);
-            const res = await fetch(API_URL);
+            const params = new URLSearchParams({
+                page: currentPage,
+                limit: itemsPerPage,
+                search: debouncedSearch,
+                sort: sortConfig.key || 'update_date',
+                order: sortConfig.direction
+            });
+
+            if (isHistory) {
+                params.append('month', selectedMonth.getMonth() + 1);
+                params.append('year', selectedMonth.getFullYear());
+            } else {
+                // Pencatatan Berjalan: Filter by exact date
+                const dateStr = filterDate ? new Date(filterDate.getTime() - (filterDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 10) : '';
+                if (dateStr) params.append('date', dateStr);
+            }
+
+            const res = await fetch(`${API_URL}?${params.toString()}`);
             const data = await res.json();
-            setRecordings(Array.isArray(data) ? data : []);
+
+            if (data.status === 'success') {
+                setRecordings(data.data);
+                setTotalPages(data.pagination.total_pages);
+                setTotalRecords(data.pagination.total_records);
+            } else if (Array.isArray(data)) {
+                // Fallback for legacy format just in case
+                setRecordings(data);
+                setTotalPages(1);
+                setTotalRecords(data.length);
+            } else {
+                setRecordings([]);
+            }
         } catch (err) {
             console.error('Failed to fetch recordings:', err);
+            setRecordings([]);
         } finally {
             setLoading(false);
         }
     };
 
-    const fetchCustomers = async () => {
+    const fetchCustomers = async (search = '') => {
         try {
-            const res = await fetch(CUSTOMER_API);
+            const url = search
+                ? `${CUSTOMER_API}?search=${encodeURIComponent(search)}`
+                : `${CUSTOMER_API}?limit=50`; // Default limit if empty
+
+            const res = await fetch(url);
             const data = await res.json();
             setCustomers(Array.isArray(data) ? data : []);
+            setFilteredCustomersForForm(Array.isArray(data) ? data : []);
         } catch (err) {
             console.error('Failed to fetch customers:', err);
         }
     };
 
-    // Fetch History when Customer is selected
-    useEffect(() => {
-        if (!formData.id_pelanggan) {
+    // Helper: Fetch History for specific customer (Server-Side)
+    const fetchCustomerHistory = async (customerId, month, year) => {
+        if (!customerId || !month || !year) return;
+
+        try {
+            // Calculate previous month to detect usage (Current Stand - Previous Stand)
+            let prevMonth = parseInt(month) - 1;
+            let prevYear = parseInt(year);
+            if (prevMonth === 0) {
+                prevMonth = 12;
+                prevYear -= 1;
+            }
+
+            // Fetch specific record for previous month using id_pelanggan filter
+            const res = await fetch(`${API_URL}?id_pelanggan=${customerId}&month=${prevMonth}&year=${prevYear}`);
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                setCustomerHistory(data.data); // Should contain 1 record
+            } else if (Array.isArray(data)) {
+                // Legacy or single object wrapper?
+                // If backend returns array:
+                setCustomerHistory(data);
+            } else {
+                // If backend returns single object for get by ID but wrapped in data?
+                // Our backend returns { status: 'success', data: [...] } for list query.
+                setCustomerHistory([]);
+            }
+        } catch (err) {
+            console.error('Failed to fetch customer history:', err);
             setCustomerHistory([]);
-            return;
         }
+    };
 
-        // Calculate previous month and year
-        let prevMonth = formData.bulan - 1;
-        let prevYear = formData.tahun;
-        if (prevMonth === 0) {
-            prevMonth = 12;
-            prevYear = formData.tahun - 1;
+    // Effect: Update history when ID/Month changes
+    useEffect(() => {
+        if (formData.id_pelanggan) {
+            fetchCustomerHistory(formData.id_pelanggan, formData.bulan, formData.tahun);
+        } else {
+            setCustomerHistory([]);
         }
-
-        // History Logic: Only show the record from exactly 1 month prior
-        const history = recordings.filter(r =>
-            (r.id_pelanggan == formData.id_pelanggan || r.id_sambungan == formData.id_sambungan) &&
-            r.bulan == prevMonth &&
-            r.tahun == prevYear
-        );
-        setCustomerHistory(history);
-
-    }, [formData.id_pelanggan, formData.bulan, formData.tahun, recordings]);
+    }, [formData.id_pelanggan, formData.bulan, formData.tahun]);
 
     // AI Validation Logic
     const validateWithAI = async (imageFile, userInput) => {
@@ -588,7 +693,7 @@ export default function RecordingManagement({ isHistory = false }) {
         const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
         const headers = visibleCols.map(col => col.label);
 
-        const rows = filteredRecordings.map(rec => {
+        const rows = recordings.map(rec => {
             return visibleCols.map(col => {
                 if (col.id === 'status_laporan') {
                     return statusKondisiOptions.find(s => s.kode_kondisi === rec.status_laporan)?.status_kondisi || rec.status_laporan || '-';
@@ -600,7 +705,7 @@ export default function RecordingManagement({ isHistory = false }) {
                     return calculateUsage(rec);
                 }
                 if (col.id === 'update_date') {
-                    return rec.update_date ? rec.update_date.slice(0, 10) : '-';
+                    return rec.update_date ? format(new Date(rec.update_date), 'dd/MM/yyyy') : '-';
                 }
                 return rec[col.id] || '-';
             });
@@ -621,7 +726,7 @@ export default function RecordingManagement({ isHistory = false }) {
     const exportToExcel = () => {
         const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
 
-        const data = filteredRecordings.map(rec => {
+        const data = recordings.map(rec => {
             const item = {};
             visibleCols.forEach(col => {
                 let val = rec[col.id];
@@ -632,7 +737,7 @@ export default function RecordingManagement({ isHistory = false }) {
                 } else if (col.id === 'pemakaian') {
                     val = calculateUsage(rec);
                 } else if (col.id === 'update_date') {
-                    val = rec.update_date ? rec.update_date.slice(0, 10) : '-';
+                    val = rec.update_date ? format(new Date(rec.update_date), 'dd/MM/yyyy') : '-';
                 }
                 item[col.label] = val || '-';
             });
@@ -656,11 +761,11 @@ export default function RecordingManagement({ isHistory = false }) {
         doc.text(title, 14, 15);
         doc.setFontSize(10);
         doc.setTextColor(100);
-        doc.text(`Jumlah Total: ${filteredRecordings.length} Data`, 14, 22);
+        doc.text(`Jumlah Total: ${totalRecords} Data (Halaman ${currentPage})`, 14, 22);
         doc.text(`Waktu Cetak: ${now}`, 280, 22, { align: 'right' });
 
         const tableColumn = visibleCols.map(col => col.label);
-        const tableRows = filteredRecordings.map(rec => {
+        const tableRows = recordings.map(rec => {
             return visibleCols.map(col => {
                 if (col.id === 'status_laporan') {
                     return statusKondisiOptions.find(s => s.kode_kondisi === rec.status_laporan)?.status_kondisi || rec.status_laporan || '-';
@@ -672,7 +777,7 @@ export default function RecordingManagement({ isHistory = false }) {
                     return calculateUsage(rec);
                 }
                 if (col.id === 'update_date') {
-                    return rec.update_date ? rec.update_date.slice(0, 10) : '-';
+                    return rec.update_date ? format(new Date(rec.update_date), 'dd/MM/yyyy') : '-';
                 }
                 return rec[col.id] || '-';
             });
@@ -716,61 +821,68 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const handlePrint = () => window.print();
 
-    const [filterDate, setFilterDate] = useState(new Date());
-    const [selectedMonth, setSelectedMonth] = useState(() => subMonths(startOfMonth(new Date()), 1));
-
     // Filter Logic
     const calculateUsage = (rec) => {
-        // Find previous month data
-        let prevMonth = parseInt(rec.bulan) - 1;
-        let prevYear = parseInt(rec.tahun);
-        if (prevMonth === 0) {
-            prevMonth = 12;
-            prevYear -= 1;
+        // Backend now provides stan_lalu (previous month stand) via subquery
+        if (rec.stan_lalu !== undefined && rec.stan_lalu !== null) {
+            const usage = parseInt(rec.stan_akhir) - parseInt(rec.stan_lalu);
+            // If negative (meter reset or error), return 0 or handle accordingly
+            if (usage < 0) return 0;
+            return usage;
         }
-
-        const prevRec = recordings.find(r =>
-            r.id_pelanggan === rec.id_pelanggan &&
-            parseInt(r.bulan) === prevMonth &&
-            parseInt(r.tahun) === prevYear
-        );
-
-        if (!prevRec) return "Data Belum Tersedia";
-        const usage = parseInt(rec.stan_akhir) - parseInt(prevRec.stan_akhir);
-        // If negative, return 0 for billing/display purposes but keep the internal logic for analysis
-        if (parseInt(rec.stan_akhir) === 0) return 0;
-        return usage;
+        return "Data Belum Tersedia";
     };
 
-    const filteredRecordings = recordings.filter(rec => {
-        if (isHistory) {
-            // Filter by Month and Year
-            const recDate = rec.update_date ? new Date(rec.update_date) : null;
-            if (!recDate) return false;
+    // Server-Side Pagination: 'recordings' already contains only the current page data.
+    // Client-side filtering/sorting is removed in favor of Server-Side.
+    const currentItems = recordings;
 
-            const targetMonth = selectedMonth.getMonth();
-            const targetYear = selectedMonth.getFullYear();
+    // Remove shadowed totalPages const, use state variable
+    // Remove client-side slice
 
-            if (recDate.getMonth() !== targetMonth || recDate.getFullYear() !== targetYear) return false;
-        } else {
-            // 1. Filter by Date (YYYY-MM-DD)
-            const recDate = rec.update_date?.slice(0, 10);
-            const targetDate = filterDate ? new Date(filterDate.getTime() - (filterDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 10) : null;
-            if (targetDate && recDate !== targetDate) return false;
-        }
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, itemsPerPage]); // Keep this reset trigger? Maybe redundancy with debounce effect.
+    // Actually, debounce effect already calls setCurrentPage(1). Redundant.
+    // Let's remove this useEffect.
 
-        // 2. Filter by Search Term
-        const term = searchTerm.toLowerCase().trim();
-        if (!term) return true;
+    const handleSaveRotation = async (degrees) => {
+        if (!previewImage) return;
 
-        if (searchCategory === 'nama') return (rec.nama?.toLowerCase() || '').includes(term);
-        if (searchCategory === 'id_sambungan') return (rec.id_sambungan?.toLowerCase() || '').includes(term);
-        if (searchCategory === 'petugas') return (rec.petugas?.toLowerCase() || '').includes(term);
+        saveRotation(previewImage, degrees, () => {
+            const timestamp = new Date().getTime();
 
-        return (rec.nama?.toLowerCase() || '').includes(term);
-    });
+            // Close the preview modal so the success notification is visible
+            setPreviewImage(null);
 
-    useEffect(() => { setCurrentPage(1); }, [searchTerm, itemsPerPage]);
+            setRecordings(prevRecordings => prevRecordings.map(rec => {
+                let updatedRec = { ...rec };
+                let changed = false;
+
+                if (rec.foto && previewImage.includes(rec.foto.split('?')[0])) {
+                    updatedRec.foto = `${rec.foto.split('?')[0]}?t=${timestamp}`;
+                    changed = true;
+                }
+                if (rec.foto_rumah && previewImage.includes(rec.foto_rumah.split('?')[0])) {
+                    updatedRec.foto_rumah = `${rec.foto_rumah.split('?')[0]}?t=${timestamp}`;
+                    changed = true;
+                }
+
+                if (changed && editingRecording && editingRecording.id === rec.id) {
+                    setEditingRecording(updatedRec);
+                    setFormData(prev => ({
+                        ...prev,
+                        foto: updatedRec.foto,
+                        foto_rumah: updatedRec.foto_rumah
+                    }));
+                    // Update previews in modal to show new rotation if opened again
+                    const newUrl = `${previewImage.split('?')[0]}?t=${timestamp}`;
+                    if (updatedRec.foto === newUrl) setFotoPreview(newUrl);
+                    if (updatedRec.foto_rumah === newUrl) setFotoRumahPreview(newUrl);
+                }
+
+                return updatedRec;
+            }));
+        });
+    };
 
     const getPageNumbers = () => {
         let pages = [];
@@ -788,13 +900,8 @@ export default function RecordingManagement({ isHistory = false }) {
         return pages;
     };
 
-    const totalPages = Math.ceil(filteredRecordings.length / itemsPerPage);
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = filteredRecordings.slice(indexOfFirstItem, indexOfLastItem);
-
     return (
-        <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+        <div style={{ animation: 'fadeIn 0.5s ease-out', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
             <style>
                 {`
                     @keyframes fadeIn {
@@ -961,7 +1068,7 @@ export default function RecordingManagement({ isHistory = false }) {
                 </div>
             </header>
 
-            <div className="card">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <div className="no-print" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, minWidth: '300px' }}>
                         {/* Column Toggle */}
@@ -1061,25 +1168,77 @@ export default function RecordingManagement({ isHistory = false }) {
 
                 {
                     loading ? <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-light)' }}>Loading recordings...</div> : (
-                        <div className="table-container" style={{ maxHeight: 'calc(100vh - 350px)', overflowY: 'auto' }}>
+                        <div className="table-container" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                             <table className="customer-table" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
                                 <thead>
                                     <tr>
                                         <th className="sticky-col-left" style={{ width: '60px', minWidth: '60px', textAlign: 'center' }}>NO</th>
                                         {visibleColumns.includes('id_sambungan') && (
-                                            <th style={{ width: '140px', minWidth: '140px', textAlign: 'left' }}>NO. SAMBUNGAN</th>
+                                            <th onClick={() => handleSort('id_sambungan')} style={{ width: '140px', minWidth: '140px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    NO. SAMBUNGAN {getSortIcon('id_sambungan')}
+                                                </div>
+                                            </th>
                                         )}
-                                        {visibleColumns.includes('nama') && <th style={{ width: '200px', minWidth: '200px', textAlign: 'left' }}>NAMA PELANGGAN</th>}
-                                        {visibleColumns.includes('id_meter') && <th style={{ width: '120px', minWidth: '120px', textAlign: 'left' }}>ID METER</th>}
-                                        {visibleColumns.includes('alamat') && <th style={{ width: '250px', minWidth: '250px', textAlign: 'left' }}>ALAMAT</th>}
-                                        {visibleColumns.includes('stan_akhir') && <th style={{ width: '100px', minWidth: '100px', textAlign: 'center' }}>STAN AKHIR</th>}
-                                        {isHistory && visibleColumns.includes('pemakaian') && <th style={{ width: '150px', minWidth: '150px', textAlign: 'center' }}>PEMAKAIAN (m³)</th>}
-                                        {visibleColumns.includes('petugas') && <th style={{ width: '150px', minWidth: '150px', textAlign: 'left' }}>PETUGAS</th>}
+                                        {visibleColumns.includes('nama') && (
+                                            <th onClick={() => handleSort('nama')} style={{ width: '200px', minWidth: '200px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    NAMA PELANGGAN {getSortIcon('nama')}
+                                                </div>
+                                            </th>
+                                        )}
+                                        {visibleColumns.includes('id_meter') && (
+                                            <th onClick={() => handleSort('id_meter')} style={{ width: '120px', minWidth: '120px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    ID METER {getSortIcon('id_meter')}
+                                                </div>
+                                            </th>
+                                        )}
+                                        {visibleColumns.includes('alamat') && (
+                                            <th onClick={() => handleSort('alamat')} style={{ width: '250px', minWidth: '250px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    ALAMAT {getSortIcon('alamat')}
+                                                </div>
+                                            </th>
+                                        )}
+                                        {visibleColumns.includes('stan_akhir') && (
+                                            <th onClick={() => handleSort('stan_akhir')} style={{ width: '100px', minWidth: '100px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    STAN AKHIR {getSortIcon('stan_akhir')}
+                                                </div>
+                                            </th>
+                                        )}
+                                        {isHistory && visibleColumns.includes('pemakaian') && (
+                                            <th onClick={() => handleSort('pemakaian')} style={{ width: '150px', minWidth: '150px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    PEMAKAIAN (m³) {getSortIcon('pemakaian')}
+                                                </div>
+                                            </th>
+                                        )}
+                                        {visibleColumns.includes('petugas') && (
+                                            <th onClick={() => handleSort('petugas')} style={{ width: '150px', minWidth: '150px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    PETUGAS {getSortIcon('petugas')}
+                                                </div>
+                                            </th>
+                                        )}
                                         {visibleColumns.includes('foto') && <th style={{ width: '110px', minWidth: '110px', textAlign: 'center' }}>FOTO METER</th>}
                                         {visibleColumns.includes('foto_rumah') && <th style={{ width: '110px', minWidth: '110px', textAlign: 'center' }}>FOTO RUMAH</th>}
-                                        {visibleColumns.includes('status_laporan') && <th style={{ width: '140px', minWidth: '140px', textAlign: 'center' }}>KONDISI METER</th>}
+                                        {visibleColumns.includes('status_laporan') && (
+                                            <th onClick={() => handleSort('status_laporan')} style={{ width: '140px', minWidth: '140px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    KONDISI METER {getSortIcon('status_laporan')}
+                                                </div>
+                                            </th>
+                                        )}
                                         {visibleColumns.includes('koordinat') && <th style={{ width: '150px', minWidth: '150px', textAlign: 'left' }}>KOORDINAT</th>}
-                                        {visibleColumns.includes('update_date') && <th style={{ width: '140px', minWidth: '140px', textAlign: 'left' }}>TGL PENCATATAN</th>}
+                                        {visibleColumns.includes('update_date') && (
+                                            <th onClick={() => handleSort('update_date')} style={{ width: '140px', minWidth: '140px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    TGL PENCATATAN {getSortIcon('update_date')}
+                                                </div>
+                                            </th>
+                                        )}
                                         {!isHistory && (
                                             <th className="no-print sticky-col-right" style={{ width: '100px', minWidth: '100px', textAlign: 'center', background: '#f8fafc', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>AKSI</th>
                                         )}
@@ -1184,7 +1343,7 @@ export default function RecordingManagement({ isHistory = false }) {
                                                     ) : '-'}
                                                 </td>
                                             )}
-                                            {visibleColumns.includes('update_date') && <td style={{ width: '140px', minWidth: '140px', fontSize: '0.75rem', textAlign: 'left' }}>{rec.update_date?.slice(0, 10)}</td>}
+                                            {visibleColumns.includes('update_date') && <td style={{ width: '140px', minWidth: '140px', fontSize: '0.75rem', textAlign: 'left' }}>{rec.update_date ? format(new Date(rec.update_date), 'dd/MM/yyyy') : '-'}</td>}
                                             {!isHistory && (
                                                 <td className="no-print sticky-col-right" style={{ width: '100px', minWidth: '100px', textAlign: 'center', background: 'inherit', padding: '0.625rem 0.75rem' }}>
                                                     <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
@@ -1203,10 +1362,10 @@ export default function RecordingManagement({ isHistory = false }) {
                     )
                 }
 
-                {!loading && filteredRecordings.length > 0 && (
+                {!loading && recordings.length > 0 && (
                     <div className="no-print" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                         <div style={{ color: 'var(--text-light)', fontSize: '0.875rem' }}>
-                            Menampilkan <span style={{ fontWeight: 600, color: 'var(--text)' }}>{indexOfFirstItem + 1}</span> sampai <span style={{ fontWeight: 600, color: 'var(--text)' }}>{Math.min(indexOfLastItem, filteredRecordings.length)}</span> dari <span style={{ fontWeight: 600, color: 'var(--text)' }}>{filteredRecordings.length}</span> pencatatan
+                            Menampilkan <span style={{ fontWeight: 600, color: 'var(--text)' }}>{((currentPage - 1) * itemsPerPage) + 1}</span> sampai <span style={{ fontWeight: 600, color: 'var(--text)' }}>{Math.min(currentPage * itemsPerPage, totalRecords)}</span> dari <span style={{ fontWeight: 600, color: 'var(--text)' }}>{totalRecords}</span> pencatatan
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1651,23 +1810,26 @@ export default function RecordingManagement({ isHistory = false }) {
                     </div>
                 )
             }
-
-            {
-                previewImage && (
-                    <div className="lightbox-overlay" onClick={() => setPreviewImage(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', animation: 'fadeIn 0.2s' }}>
-                        <div style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }} onClick={(e) => e.stopPropagation()}>
-                            <button style={{ position: 'absolute', top: '-40px', right: 0, background: 'none', border: 'none', color: 'white', cursor: 'pointer' }} onClick={() => setPreviewImage(null)}><X size={32} /></button>
-                            <img src={previewImage && previewImage.startsWith('/') ? `${API_BASE_URL}${previewImage}` : previewImage} alt="Preview" style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: '8px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }} />
-                        </div>
-                    </div>
-                )
-            }
+            <SimpleImageViewer
+                isOpen={!!previewImage}
+                onClose={() => setPreviewImage(null)}
+                imageSrc={previewImage && previewImage.startsWith('/') && !previewImage.startsWith('//') ? `${API_BASE_URL}${previewImage}` : previewImage}
+                onSaveRotation={handleSaveRotation}
+            />
             {/* Print Footer */}
             <div className="print-footer">
                 <p style={{ margin: '0 0 40px 0' }}>Dicetak oleh,</p>
                 <div style={{ borderBottom: '1px solid black', width: '200px', margin: '0 auto 10px auto' }}></div>
                 <p>{localStorage.getItem('username') || 'Admin'}</p>
             </div>
+            <style>
+                {`
+                    .card, .table-container {
+                        position: relative;
+                        z-index: 1;
+                    }
+                `}
+            </style>
         </div >
     );
 }

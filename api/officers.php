@@ -24,7 +24,7 @@ switch ($method) {
         $kec_code = $_GET['kecamatan_code'] ?? null;
 
         if ($route_code || $branch_code || $kec_code) {
-            $conditions = [];
+            $conditions = ["p.deleted_at IS NULL"]; // Base condition
             $params = [];
             if ($route_code) {
                 $conditions[] = "wp.kode_rute = ?";
@@ -39,23 +39,31 @@ switch ($method) {
                 $params[] = $kec_code;
             }
 
-            $sql = "SELECT DISTINCT p.* FROM data_petugas p 
+            $sql = "SELECT DISTINCT p.*, c.cabang as nama_cabang 
+                    FROM data_petugas p 
+                    LEFT JOIN cabang c ON p.kode_cabang = c.kode_cabang
                     JOIN data_wilayah_petugas wp ON p.id = wp.id_petugas 
                     WHERE " . implode(" AND ", $conditions) . " 
                     ORDER BY p.nama ASC";
             $stmt = $conn->prepare($sql);
             $stmt->execute($params);
         } else {
-            $stmt = $conn->query("SELECT * FROM data_petugas ORDER BY nama ASC");
+            $stmt = $conn->query("SELECT p.*, c.cabang as nama_cabang 
+                                  FROM data_petugas p 
+                                  LEFT JOIN cabang c ON p.kode_cabang = c.kode_cabang 
+                                  WHERE p.deleted_at IS NULL 
+                                  ORDER BY p.nama ASC");
         }
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // ... (routes fetching loop remains same) ...
 
         // Fetch routes for each officer
         $stmt_routes = $conn->prepare("SELECT kode_rute FROM data_wilayah_petugas WHERE id_petugas = ?");
         foreach ($rows as &$row) {
             $stmt_routes->execute([$row['id']]);
             $routes = $stmt_routes->fetchAll(PDO::FETCH_COLUMN);
-            $row['kode_rute'] = $routes; // Array of route codes
+            $row['kode_rute'] = $routes;
         }
 
         if (!function_exists('str_starts_with')) {
@@ -66,13 +74,9 @@ switch ($method) {
         }
 
         foreach ($rows as &$row) {
-            // Fix: If it's just a filename or has legacy "uploads" path, clean it and prepend base_url
             if (!empty($row['foto_petugas'])) {
                 $foto = $row['foto_petugas'];
-
-                // If it's not a full URL and not base64
                 if (!str_starts_with($foto, 'http') && !str_starts_with($foto, 'data:image')) {
-                    // Extract only filename if it contains directory separators
                     $filename = basename(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $foto));
                     $row['foto_petugas'] = $base_url . $filename;
                 }
@@ -83,10 +87,11 @@ switch ($method) {
         break;
 
     case 'POST':
-        // Use $_POST for FormData, fallback to JSON input if needed (though Frontend uses FormData now)
+        // ... (POST logic unchanged until verify) ...
+        // Use $_POST for FormData, fallback to JSON input if needed
         $data = !empty($_POST) ? $_POST : json_decode(file_get_contents('php://input'), true);
 
-        // Fields: nik, nama, alamat, telepon, ktp, tgl_masuk, tgl_keluar, kode_cabang, foto_petugas, status_aktif
+        // Fields
         $nik = $data['nik'] ?? null;
         $nama = $data['nama'] ?? '';
         $alamat = $data['alamat'] ?? '';
@@ -97,19 +102,18 @@ switch ($method) {
         $kode_cabang = $data['kode_cabang'] ?? '';
 
         // Handle existing photo path
-        // If frontend sends back the full URL, strip the base_url content to store only filename
         $foto_petugas = $data['foto_petugas'] ?? '';
         if ($foto_petugas && str_starts_with($foto_petugas, $base_url)) {
             $foto_petugas = str_replace($base_url, '', $foto_petugas);
         }
 
-        // Handle multiple routes (array)
+        // Handle multiple routes
         $kode_rute = $data['kode_rute'] ?? [];
         if (is_string($kode_rute)) {
             $kode_rute = !empty($kode_rute) ? [$kode_rute] : [];
         }
 
-        // Handle File Upload via $_FILES
+        // Handle File Upload
         if (isset($_FILES['foto_petugas']) && $_FILES['foto_petugas']['error'] === UPLOAD_ERR_OK) {
             $tmp_name = $_FILES['foto_petugas']['tmp_name'];
             $name = basename($_FILES['foto_petugas']['name']);
@@ -117,7 +121,7 @@ switch ($method) {
             $new_name = 'petugas_' . $nik . '_' . time() . '.' . $ext;
 
             if (move_uploaded_file($tmp_name, $upload_dir . $new_name)) {
-                $foto_petugas = $new_name; // Store ONLY filename in DB
+                $foto_petugas = $new_name;
             }
         }
         $status_aktif = $data['status_aktif'] ?? 'Aktif';
@@ -148,7 +152,7 @@ switch ($method) {
                 $officer_id
             ]);
 
-            // Update routes in data_wilayah_petugas
+            // Update routes
             $stmt = $conn->prepare("DELETE FROM data_wilayah_petugas WHERE id_petugas = ?");
             $stmt->execute([$officer_id]);
 
@@ -186,7 +190,7 @@ switch ($method) {
 
             $officer_id = $conn->lastInsertId();
 
-            // Insert routes in data_wilayah_petugas
+            // Insert routes
             if (!empty($kode_rute) && !empty($kode_cabang)) {
                 $stmt = $conn->prepare("INSERT INTO data_wilayah_petugas (id_petugas, kode_cabang, kode_rute) VALUES (?, ?, ?)");
                 foreach ($kode_rute as $route) {
@@ -201,13 +205,23 @@ switch ($method) {
 
     case 'DELETE':
         if (isset($_GET['id'])) {
-            $stmt = $conn->prepare("DELETE FROM data_petugas WHERE id = ?");
+            // Soft Delete Implementation
+            $stmt = $conn->prepare("UPDATE data_petugas SET deleted_at = NOW() WHERE id = ?");
             try {
                 $stmt->execute([$_GET['id']]);
-                echo json_encode(['message' => 'Officer deleted']);
+
+                // Optionally remove relations or keep them? 
+                // Keeping relations allows for easier restore. 
+                // But if they are assigned to routes, they might still show up in some joins?
+                // The JOIN in GET above filters by p.deleted_at IS NULL so they won't show up.
+                // Routes themselves in data_wilayah_petugas rely on officer ID. We should probably NOT delete them if we want true soft delete restore capability properly.
+                // However, user might see "ghost" assignments if looking from route perspective?
+                // For now, simple soft delete of the main record is enough as the main query filters by it.
+
+                echo json_encode(['message' => 'Officer soft deleted']);
             } catch (PDOException $e) {
                 http_response_code(500);
-                echo json_encode(['error' => 'Gagal menghapus: Data mungkin sedang digunakan.']);
+                echo json_encode(['error' => 'Gagal menghapus data.']);
             }
         }
         break;

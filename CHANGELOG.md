@@ -1,5 +1,61 @@
 # Changelog
 
+## [1.2.0] - 2026-02-23
+
+### Added
+- **"Terverifikasi" Filter**: New OCR status filter in Report ABM to isolate manually verified records (based on `tgl_verifikasi`).
+- **Three-Button Export**: Dedicated buttons for PDF, EXCEL, and CSV in the report modal with professional corporate styling and Lucide icons.
+- **CSV Export API**: New backend script `api/ocr_report_csv.php` for seamless data export to spreadsheet applications.
+
+### Changed
+- **Interactive Dashboard KPI**: Re-layout main metrics into 4 consolidated summary cards with interactive drill-down functionality (direct navigation or detail modal).
+- **Professional UI Refinement**: Updated export interface with solid corporate colors and standardized document icons for a premium enterprise feel.
+
+### Fixed
+- **Backend Filter Synchronization**: Updated `ocr_report_pdf.php` and `ocr_report_csv.php` to correctly handle the "Terverifikasi" status logic.
+- **KPI Card Layout**: Fixed grid spacing and responsiveness for the summary section.
+
+
+## [0.0.8] - 2026-02-18
+
+### Fixed
+- **Global Table Scrolling**: Resolved issue where tables in `CustomerManagement`, `OfficerManagement`, and `RecordingManagement` were not scrollable when displaying 25+ rows.
+- **Sidebar Navigation**: Fixed the "Laporan" menu logic in `App.jsx` to only toggle expansion, preventing empty pages when clicking parent items.
+
+## [0.0.6] - 2026-02-12
+
+### Changed
+- **Date Formatting Standardization**:
+    - **Recording Management**: Standardized "TGL PENCATATAN" column and all export formats (CSV, Excel, PDF) to `dd/MM/yyyy`.
+    - **Meter Analysis**: Updated "TGL VERIFIKASI" to use `dd/MM/yyyy` format.
+    - **Officer Management**: Confirmed "TGL MASUK" and "TGL KELUAR" are consistently using `dd/MM/yyyy`.
+
+## [0.0.5] - 2026-02-11
+
+### Chores
+- **Database Verification**:
+    - Verified `rute` table structure and data integrity in `sicater_db.sql`.
+
+## [0.0.4] - 2026-02-10
+
+### Added
+- **Global Table Sorting**:
+    - Implemented click-to-sort functionality for all table headers across the application.
+    - Supported components: `CustomerManagement`, `OfficerManagement`, `BranchManagement`, `RecordingManagement`, `MeterAnalysis`, and `OfficerMapping`.
+    - Features: Ascending/Descending toggle, visual sort indicators, and compatibility with existing filters.
+- **Advanced Toolbar (Officer Mapping)**:
+    - Added "Pilih Kolom" dropdown to toggle column visibility.
+    - Added "Filter" dropdown for specific search categories (Name, Connection No, Address, Route).
+- **Soft Delete System**:
+    - Implemented soft delete for Officers and Customers to preserve historical data integrity.
+    - Updated `api/officers.php` and `api/customers.php` to handle `is_deleted` flag.
+
+### Changed
+- **UI/UX Refinements**:
+    - **Customer Management**: Removed 'No. Urut' column and formatted active dates to `dd/mm/yyyy`.
+    - **Officer Management**: displayed Branch Name instead of Code, and formatted all date fields to `dd/mm/yyyy`.
+    - **Form Layout**: Optimized column spans for identity and location fields in forms for better readability.
+
 ## [0.0.3] - 2026-02-02
 
 ### Added

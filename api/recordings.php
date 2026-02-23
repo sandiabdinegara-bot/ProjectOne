@@ -23,31 +23,13 @@ if (!is_dir($dir_rumah))
 switch ($method) {
     case 'GET':
         $officer_id = $_GET['officer_id'] ?? null;
+
+        // 1. Single ID Fetch (No Pagination needed)
         if (isset($_GET['id'])) {
             $stmt = $conn->prepare("SELECT * FROM data_pencatatan WHERE id = ?");
             $stmt->execute([$_GET['id']]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($row && $row['foto'] && !str_starts_with($row['foto'], 'data:image') && !str_starts_with($row['foto'], 'http')) {
-                $row['foto'] = $base_url_meter . $row['foto'];
-            }
-            if ($row && isset($row['foto_rumah']) && $row['foto_rumah'] && !str_starts_with($row['foto_rumah'], 'data:image') && !str_starts_with($row['foto_rumah'], 'http')) {
-                $row['foto_rumah'] = $base_url_rumah . $row['foto_rumah'];
-            }
-            echo json_encode($row);
-        } else {
-            if ($officer_id) {
-                $sql = "SELECT p.* FROM data_pencatatan p 
-                        JOIN data_pelanggan c ON p.id_pelanggan = c.id 
-                        WHERE c.kode_rute IN (SELECT kode_rute FROM data_wilayah_petugas WHERE id_petugas = ?)
-                        ORDER BY p.update_date DESC";
-                $stmt = $conn->prepare($sql);
-                $stmt->execute([$officer_id]);
-            } else {
-                $sql = "SELECT * FROM data_pencatatan ORDER BY update_date DESC";
-                $stmt = $conn->query($sql);
-            }
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($rows as &$row) {
+            if ($row) {
                 if ($row['foto'] && !str_starts_with($row['foto'], 'data:image') && !str_starts_with($row['foto'], 'http')) {
                     $row['foto'] = $base_url_meter . $row['foto'];
                 }
@@ -55,8 +37,115 @@ switch ($method) {
                     $row['foto_rumah'] = $base_url_rumah . $row['foto_rumah'];
                 }
             }
-            echo json_encode($rows);
+            echo json_encode($row);
+            exit;
         }
+
+        // 2. Data List Fetch (Pagination & Search)
+        $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 10;
+        $offset = ($page - 1) * $limit;
+
+        $search = $_GET['search'] ?? '';
+        $sort = $_GET['sort'] ?? 'update_date';
+        $direction = strtolower($_GET['order'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
+
+        // Allowed sort columns for safety
+        $allowed_sorts = ['id_sambungan', 'nama', 'stan_akhir', 'petugas', 'update_date', 'status_laporan', 'alamat', 'id_meter', 'stan_lalu', 'pemakaian'];
+        if (!in_array($sort, $allowed_sorts))
+            $sort = 'update_date';
+
+        $id_pelanggan = $_GET['id_pelanggan'] ?? null;
+
+        // Base Query Builder
+        $where_clauses = [];
+        $params = [];
+
+        // Filter by Customer ID (Specific History)
+        if ($id_pelanggan) {
+            $where_clauses[] = "id_pelanggan = ?";
+            $params[] = $id_pelanggan;
+        }
+
+        // Filter by Office (if applicable)
+        if ($officer_id) {
+            $where_clauses[] = "id_pelanggan IN (select id FROM data_pelanggan WHERE kode_rute IN (SELECT kode_rute FROM data_wilayah_petugas WHERE id_petugas = ?))";
+            $params[] = $officer_id;
+        }
+
+        // Search Filter
+        if (!empty($search)) {
+            $term = "%$search%";
+            $where_clauses[] = "(nama LIKE ? OR id_sambungan LIKE ? OR alamat LIKE ? OR petugas LIKE ?)";
+            $params[] = $term;
+            $params[] = $term;
+            $params[] = $term;
+            $params[] = $term;
+        }
+
+        // Additional Dates Filters
+        if (isset($_GET['month']) && isset($_GET['year'])) {
+            $where_clauses[] = "bulan = ? AND tahun = ?";
+            $params[] = $_GET['month'];
+            $params[] = $_GET['year'];
+        } elseif (isset($_GET['date'])) {
+            $where_clauses[] = "DATE(update_date) = ?";
+            $params[] = $_GET['date'];
+        }
+
+        $sql_where = "";
+        if (count($where_clauses) > 0) {
+            $sql_where = "WHERE " . implode(" AND ", $where_clauses);
+        }
+
+        // --- Execute Count Query ---
+        $count_sql = "SELECT COUNT(*) as total FROM data_pencatatan $sql_where";
+        $stmt_count = $conn->prepare($count_sql);
+        $stmt_count->execute($params);
+        $count_result = $stmt_count->fetch(PDO::FETCH_ASSOC);
+        $total_records = $count_result ? $count_result['total'] : 0;
+        $total_pages = ceil($total_records / $limit);
+
+        // --- Execute Data Query ---
+        // Subquery for Stan Lalu (Previous Month)
+        $subquery_stan_lalu = "(
+            SELECT stan_akhir 
+            FROM data_pencatatan p2 
+            WHERE p2.id_pelanggan = data_pencatatan.id_pelanggan 
+            AND (
+                (p2.bulan = data_pencatatan.bulan - 1 AND p2.tahun = data_pencatatan.tahun) 
+                OR 
+                (p2.bulan = 12 AND p2.tahun = data_pencatatan.tahun - 1)
+            )
+            LIMIT 1
+        )";
+
+        $data_sql = "SELECT *, $subquery_stan_lalu as stan_lalu FROM data_pencatatan $sql_where ORDER BY $sort $direction LIMIT $limit OFFSET $offset";
+        $stmt = $conn->prepare($data_sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Process Image URLs
+        foreach ($rows as &$row) {
+            if ($row['foto'] && !str_starts_with($row['foto'], 'data:image') && !str_starts_with($row['foto'], 'http')) {
+                $row['foto'] = $base_url_meter . $row['foto'];
+            }
+            if (isset($row['foto_rumah']) && $row['foto_rumah'] && !str_starts_with($row['foto_rumah'], 'data:image') && !str_starts_with($row['foto_rumah'], 'http')) {
+                $row['foto_rumah'] = $base_url_rumah . $row['foto_rumah'];
+            }
+        }
+
+        // Return wrapped response
+        echo json_encode([
+            'status' => 'success',
+            'data' => $rows,
+            'pagination' => [
+                'total_records' => $total_records,
+                'total_pages' => $total_pages,
+                'current_page' => $page,
+                'limit' => $limit
+            ]
+        ]);
         break;
 
     case 'POST':

@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Edit2, Trash2, User, X, Save, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, Users, Camera, List } from 'lucide-react';
+import SimpleImageViewer from './common/SimpleImageViewer';
+import { Search, Plus, Edit2, Trash2, User, X, Save, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ChevronDown, Users, Camera, List, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Filter, Building2 } from 'lucide-react';
 import SearchableSelect from './common/SearchableSelect';
+import Pagination from './common/Pagination';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+
+import useImageRotator from '../hooks/useImageRotator';
 
 const API_URL = './api/officers.php';
 const API_BASE_URL = 'http://localhost'; // Base URL for absolute paths (XAMPP)
 
 const ALL_COLUMNS = [
-    { id: 'id', label: 'ID' },
     { id: 'nik', label: 'NIK' },
     { id: 'ktp', label: 'NO. KTP' },
-    { id: 'kode_cabang', label: 'CABANG' },
+    { id: 'nama_cabang', label: 'CABANG' },
     { id: 'kode_rute', label: 'RUTE' },
     { id: 'nama', label: 'NAMA PETUGAS' },
     { id: 'foto_petugas', label: 'FOTO' },
@@ -25,16 +26,24 @@ const ALL_COLUMNS = [
     { id: 'update_date', label: 'LAST UPDATE' }
 ];
 
-const DEFAULT_COLUMNS = ['id', 'nik', 'ktp', 'foto_petugas', 'kode_cabang', 'nama', 'telepon', 'status_aktif'];
+const DEFAULT_COLUMNS = [
+    'nik', 'ktp', 'nama_cabang', 'kode_rute', 'nama', 'foto_petugas',
+    'alamat', 'telepon', 'tgl_masuk', 'tgl_keluar', 'status_aktif', 'update_date'
+];
 
-export default function OfficerManagement() {
+export default function OfficerManagement({ isReport = false, onReportClose }) {
+    const { saveRotation } = useImageRotator();
     const [officers, setOfficers] = useState([]);
     const [filteredOfficers, setFilteredOfficers] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingOfficer, setEditingOfficer] = useState(null);
+    const [scale, setScale] = useState(1);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const reportPaperRef = React.useRef(null);
     const [previewImage, setPreviewImage] = useState(null);
+    const tableContainerRef = useRef(null);
     const [formData, setFormData] = useState({
         nik: '', nama: '', alamat: '', telepon: '', ktp: '',
         tgl_masuk: '', tgl_keluar: '', kode_cabang: '', kode_rute: [],
@@ -42,6 +51,12 @@ export default function OfficerManagement() {
     });
     const [branches, setBranches] = useState([]);
     const [routes, setRoutes] = useState([]);
+
+    // Route Detail Modal State
+    const [isRouteDetailModalOpen, setIsRouteDetailModalOpen] = useState(false);
+    const [selectedOfficerRoutes, setSelectedOfficerRoutes] = useState(null);
+    const [routeDetailSearch, setRouteDetailSearch] = useState('');
+    const [modalPage, setModalPage] = useState(1);
 
     // Route Selection Modal State
     const [isRouteSelectOpen, setIsRouteSelectOpen] = useState(false);
@@ -51,10 +66,34 @@ export default function OfficerManagement() {
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [isSearchMenuOpen, setIsSearchMenuOpen] = useState(false);
     const [searchCategory, setSearchCategory] = useState('nama');
+
+    // Store all available routes for name lookup
+    const [allRoutes, setAllRoutes] = useState({});
+
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const getSortIcon = (key) => {
+        if (sortConfig.key !== key) return <ArrowUpDown size={14} style={{ opacity: 0.3 }} />;
+        if (sortConfig.direction === 'asc') return <ArrowUp size={14} />;
+        return <ArrowDown size={14} />;
+    };
     const [visibleColumns, setVisibleColumns] = useState(() => {
-        const saved = localStorage.getItem('pdam_visible_columns_officers_v2');
+        const saved = localStorage.getItem('pdam_visible_columns_officers_v5');
         return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
     });
+
+    useEffect(() => {
+        localStorage.setItem('pdam_visible_columns_officers_v5', JSON.stringify(visibleColumns));
+    }, [visibleColumns]);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -64,6 +103,9 @@ export default function OfficerManagement() {
 
     useEffect(() => {
         fetchOfficers();
+        // Fetch all routes for lookup
+        fetchAllRoutes();
+
         const handleClickOutside = (event) => {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target)) {
                 setIsColumnMenuOpen(false);
@@ -76,6 +118,24 @@ export default function OfficerManagement() {
         fetchBranches();
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    const fetchAllRoutes = async () => {
+        try {
+            // Use existing options API which queries the 'rute' table
+            const res = await fetch('./api/options.php?type=rute');
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                // Create lookup object: { 'CODE': 'NAME' }
+                const routeMap = {};
+                data.forEach(r => {
+                    routeMap[r.kode_rute] = r.rute;
+                });
+                setAllRoutes(routeMap);
+            }
+        } catch (err) {
+            console.error('Failed to fetch all routes:', err);
+        }
+    };
 
     useEffect(() => {
         if (formData.kode_cabang) {
@@ -118,6 +178,39 @@ export default function OfficerManagement() {
         setFilteredOfficers(filtered);
         setCurrentPage(1);
     }, [searchTerm, officers, searchCategory]);
+
+    const sortedOfficers = React.useMemo(() => {
+        let sortableItems = [...filteredOfficers];
+        if (sortConfig.key !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                // Handle null/undefined
+                if (aValue === null || aValue === undefined) aValue = '';
+                if (bValue === null || bValue === undefined) bValue = '';
+
+                // Handle numbers (as strings or numbers)
+                if (!isNaN(parseFloat(aValue)) && !isNaN(parseFloat(bValue)) && isFinite(aValue) && isFinite(bValue)) {
+                    aValue = parseFloat(aValue);
+                    bValue = parseFloat(bValue);
+                } else {
+                    // String comparison (case-insensitive)
+                    aValue = String(aValue).toLowerCase();
+                    bValue = String(bValue).toLowerCase();
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [filteredOfficers, sortConfig]);
 
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -202,6 +295,24 @@ export default function OfficerManagement() {
         setEditingOfficer(null);
     };
 
+    const handleViewRoutes = (officer) => {
+        const routeList = officer.kode_rute ? (Array.isArray(officer.kode_rute) ? officer.kode_rute : String(officer.kode_rute).split(',').map(r => r.trim()).filter(r => r)) : [];
+
+        // Map codes to objects with names
+        const enrichedRoutes = routeList.map(code => ({
+            code: code,
+            name: allRoutes[code] || '-'
+        }));
+
+        setSelectedOfficerRoutes({
+            nama: officer.nama,
+            routes: enrichedRoutes
+        });
+        setRouteDetailSearch('');
+        setModalPage(1);
+        setIsRouteDetailModalOpen(true);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -214,7 +325,12 @@ export default function OfficerManagement() {
         body.append('tgl_masuk', formData.tgl_masuk);
         body.append('tgl_keluar', formData.tgl_keluar);
         body.append('kode_cabang', formData.kode_cabang);
-        body.append('kode_rute', formData.kode_rute);
+        // Fix: Send multiple routes as array
+        if (Array.isArray(formData.kode_rute)) {
+            formData.kode_rute.forEach(r => body.append('kode_rute[]', r));
+        } else if (formData.kode_rute) {
+            body.append('kode_rute[]', formData.kode_rute);
+        }
         body.append('status_aktif', formData.status_aktif);
 
         // If there's an existing photo string (URL) and no new file, we can send it as is, or backend will ignore it if we send nothing and logic handles it.
@@ -277,11 +393,26 @@ export default function OfficerManagement() {
         }
     };
 
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString;
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
+    };
+
     // Export Functions
     const exportToCSV = () => {
         const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_petugas');
         const headers = visibleCols.map(c => c.label);
-        const rows = filteredOfficers.map(item => visibleCols.map(c => item[c.id] || '-'));
+        const rows = filteredOfficers.map(item => visibleCols.map(c => {
+            if (['tgl_masuk', 'tgl_keluar', 'update_date'].includes(c.id)) {
+                return formatDate(item[c.id]);
+            }
+            return item[c.id] || '-';
+        }));
 
         const csvContent = [headers, ...rows].map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -299,7 +430,11 @@ export default function OfficerManagement() {
         const data = filteredOfficers.map(item => {
             const row = {};
             visibleCols.forEach(col => {
-                row[col.label] = item[col.id] || '-';
+                if (['tgl_masuk', 'tgl_keluar', 'update_date'].includes(col.id)) {
+                    row[col.label] = formatDate(item[col.id]);
+                } else {
+                    row[col.label] = item[col.id] || '-';
+                }
             });
             return row;
         });
@@ -310,832 +445,992 @@ export default function OfficerManagement() {
     };
 
     const exportToPDF = () => {
-        const doc = new jsPDF('l', 'mm', 'a4');
-        const now = new Date().toLocaleString('id-ID');
-        const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_petugas');
+        // Construct filters
+        const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
+        const branchParam = (formData.kode_cabang && formData.kode_cabang !== 'All') ? `&branch_code=${encodeURIComponent(formData.kode_cabang)}` : '';
+        const statusParam = (formData.status_aktif && formData.status_aktif !== 'Semua') ? `&status=${encodeURIComponent(formData.status_aktif)}` : '';
 
-        doc.setFontSize(18);
-        doc.setTextColor(14, 165, 233);
-        doc.text("Laporan Data Petugas PDAM", 14, 15);
-        doc.setFontSize(10);
-        doc.setTextColor(100);
-        doc.text(`Jumlah Total: ${filteredOfficers.length} Petugas`, 14, 22);
-        doc.text(`Waktu Cetak: ${now}`, 280, 22, { align: 'right' });
-
-        const tableColumn = ["No", ...visibleCols.map(c => c.label)];
-        const tableRows = filteredOfficers.map((item, i) => [
-            i + 1,
-            ...visibleCols.map(c => item[c.id] || '-')
-        ]);
-
-        autoTable(doc, {
-            startY: 28,
-            head: [tableColumn],
-            body: tableRows,
-            theme: 'grid',
-            headStyles: { fillColor: [241, 245, 249], textColor: [100, 116, 139], fontStyle: 'bold' },
-            styles: { fontSize: 8 }
-        });
-        doc.save(`data_petugas_${new Date().toISOString().split('T')[0]}.pdf`);
+        const url = `./api/officer_report_pdf.php?t=${new Date().getTime()}${searchParam}${branchParam}${statusParam}`;
+        window.open(url, '_blank');
     };
 
     const handlePrint = () => {
         window.print();
     };
 
+    const handleZoomIn = () => setScale(prev => Math.min(prev + 0.1, 2));
+    const handleZoomOut = () => setScale(prev => Math.max(prev - 0.1, 0.5));
+    const handleResetZoom = (value) => {
+        if (value === '100%') setScale(1);
+        else if (value === 'Lebar Halaman') {
+            const containerWidth = reportPaperRef.current?.parentElement?.clientWidth || 0;
+            const paperWidth = 297 * 3.7795275591; // mm to px
+            setScale(containerWidth / (paperWidth + 80));
+        } else if (value === 'Satu Halaman Penuh') {
+            const containerHeight = window.innerHeight - 200;
+            const paperHeight = 210 * 3.7795275591;
+            setScale(containerHeight / paperHeight);
+        }
+    };
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+            setIsFullscreen(true);
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+                setIsFullscreen(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }, []);
+
     // Pagination Logic
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = filteredOfficers.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(filteredOfficers.length / itemsPerPage);
+    const currentItems = sortedOfficers.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(sortedOfficers.length / itemsPerPage);
+
+    const handleSaveRotation = async (degrees) => {
+        if (!previewImage) return;
+
+        saveRotation(previewImage, degrees, () => {
+            const timestamp = new Date().getTime();
+            // Close the preview modal so the success notification is visible
+            setPreviewImage(null);
+
+            setOfficers(prevOfficers => prevOfficers.map(officer => {
+                if (officer.foto_petugas && previewImage.includes(officer.foto_petugas.split('?')[0])) {
+                    return { ...officer, foto_petugas: `${officer.foto_petugas.split('?')[0]}?t=${timestamp}` };
+                }
+                return officer;
+            }));
+
+            if (editingOfficer && editingOfficer.foto_petugas && previewImage.includes(editingOfficer.foto_petugas.split('?')[0])) {
+                setEditingOfficer(prev => ({
+                    ...prev,
+                    foto_petugas: `${prev.foto_petugas.split('?')[0]}?t=${timestamp}`
+                }));
+                setFormData(prev => ({ ...prev, foto_petugas: `${prev.foto_petugas.split('?')[0]}?t=${timestamp}` }));
+            }
+        });
+    };
 
     return (
-        <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-            <style>
-                {`
-                    @keyframes fadeIn {
-                        from { opacity: 0; transform: translateY(10px); }
-                        to { opacity: 1; transform: translateY(0); }
-                    }
-                    .customer-table {
-                        width: 100%;
-                        border-collapse: separate; /* Recommended for sticky headers */
-                        border-spacing: 0;
-                    }
-                    .customer-table thead th {
-                        position: sticky; top: 0; z-index: 30; background: #f8fafc !important; 
-                        box-shadow: inset 0 -2px 0 var(--border);
-                        text-transform: uppercase;
-                        font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; color: #64748b; 
-                        padding: 1rem 1.25rem !important;
-                        white-space: nowrap;
-                    }
-                    .customer-table tbody tr:nth-of-type(even) td {
-                        background-color: #fafbfc;
-                    }
-                    .customer-table tbody tr:hover td {
-                        background-color: #eff6ff !important;
-                    }
-                    .customer-table td, .customer-table th {
-                        padding: 0.875rem 1.25rem !important;
-                        vertical-align: middle;
-                        font-size: 0.875rem;
-                        color: #334155;
-                    }
-                    .sticky-col-left {
-                        position: sticky !important;
-                        left: 0;
-                        z-index: 20 !important;
-                        background: white !important;
-                    }
-                    .customer-table thead th.sticky-col-left {
-                        background: #f8fafc !important;
-                        z-index: 40 !important;
-                        box-shadow: inset 0 -2px 0 var(--border);
-                    }
-                    .sticky-col-right {
-                        position: sticky !important;
-                        right: 0;
-                        z-index: 20 !important;
-                        background: white !important;
-                    }
-                    .customer-table thead th.sticky-col-right {
-                        background: #f8fafc !important;
-                        z-index: 40 !important;
-                        box-shadow: inset 0 -2px 0 var(--border);
-                    }
-                    .customer-table tbody tr:nth-of-type(even) .sticky-col-left,
-                    .customer-table tbody tr:nth-of-type(even) .sticky-col-right {
-                        background-color: #fafbfc !important;
-                    }
-                    .badge {
-                        padding: 0.25rem 0.75rem;
-                        border-radius: 9999px;
-                        font-size: 0.75rem;
-                        font-weight: 600;
-                    }
-                    .badge-active {
-                        background-color: #dcfce7;
-                        color: #166534;
-                    }
-                    .badge-inactive {
-                        background-color: #fee2e2;
-                        color: #991b1b;
-                    }
-
-                    @media print {
-                        .no-print, .no-print * {
-                            display: none !important;
+        <>
+            <div style={{ animation: 'fadeIn 0.5s ease-out', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <style>
+                    {`
+                        @keyframes fadeIn {
+                            from { opacity: 0; transform: translateY(10px); }
+                            to { opacity: 1; transform: translateY(0); }
                         }
                         
-                        body {
-                            background: white !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
-                        }
-
                         .card {
-                            box-shadow: none !important;
-                            border: none !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
-                        }
-
-                        .table-container {
-                            overflow: visible !important;
-                            max-height: none !important;
-                            width: 100% !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
+                            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                            background: white;
+                            border-radius: 16px;
+                            padding: 1.5rem;
+                            border: 1px solid var(--border);
+                            position: relative;
+                            z-index: 1; 
                         }
 
                         .customer-table {
-                            width: 100% !important;
-                            border-collapse: collapse !important;
-                            table-Layout: auto !important;
-                            font-size: 8pt !important;
+                            width: 100%;
+                            border-collapse: separate; 
+                            border-spacing: 0;
                         }
-
-                        .customer-table th, .customer-table td {
-                            border: 1px solid #e2e8f0 !important;
-                            padding: 4pt !important;
-                            overflow: visible !important;
-                            white-space: normal !important;
-                            word-break: break-word !important;
-                            min-width: 0 !important;
-                            width: auto !important;
-                            position: static !important;
-                            background: transparent !important;
-                            box-shadow: none !important;
+                        .customer-table thead th {
+                            position: sticky; top: 0; z-index: 30; background: #f8fafc; 
+                            box-shadow: inset 0 -2px 0 var(--border);
+                            text-transform: uppercase;
+                            font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; color: #64748b; 
+                            padding: 1rem 1.25rem !important;
+                            white-space: nowrap;
                         }
-
+                        .customer-table tbody tr:nth-of-type(even) td {
+                            background-color: #fafbfc;
+                        }
+                        .customer-table tbody tr:hover td {
+                            background-color: #eff6ff !important;
+                        }
+                        .customer-table td, .customer-table th {
+                            padding: 0.875rem 1.25rem !important;
+                            vertical-align: middle;
+                            font-size: 0.875rem;
+                            color: #334155;
+                        }
                         .sticky-col-left {
-                            position: static !important;
-                            background: transparent !important;
-                            box-shadow: none !important;
+                            position: sticky !important;
+                            left: 0;
+                            z-index: 20 !important;
+                            background: white !important;
+                        }
+                        .customer-table thead th.sticky-col-left {
+                            background: #f8fafc !important;
+                            z-index: 40 !important;
+                            box-shadow: inset 0 -2px 0 var(--border);
+                        }
+                        .sticky-col-right {
+                            position: sticky !important;
+                            right: 0;
+                            z-index: 20 !important;
+                            background: white !important;
+                        }
+                        .customer-table thead th.sticky-col-right {
+                            background: #f8fafc !important;
+                            z-index: 40 !important;
+                            box-shadow: inset 0 -2px 0 var(--border);
+                        }
+                        .customer-table tbody tr:nth-of-type(even) .sticky-col-left,
+                        .customer-table tbody tr:nth-of-type(even) .sticky-col-right {
+                            background-color: #fafbfc !important;
+                        }
+                        .badge {
+                            padding: 0.25rem 0.75rem;
+                            border-radius: 9999px;
+                            font-size: 0.75rem;
+                            font-weight: 600;
+                        }
+                        @media print {
+                            .no-print { display: none !important; }
+                            .report-header-only { display: block !important; }
+                            .card { border: none !important; box-shadow: none !important; padding: 0 !important; }
+                            table { width: 100% !important; border-collapse: collapse !important; }
+                            th { background: #0ea5e9 !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                            td, th { border: 1px solid #e2e8f0 !important; padding: 8px !important; }
+                            @page { size: A4 landscape; margin: 1.5cm; }
                         }
 
-                        @page {
-                            size: landscape;
-                            margin: 1cm;
+                        .report-toolbar {
+                            position: sticky;
+                            top: 0;
+                            z-index: 1000;
+                            background: #1e293b;
+                            padding: 0.75rem 1.5rem;
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            color: white;
+                            border-bottom: 1px solid #334155;
+                            margin-bottom: 2rem;
+                            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
                         }
 
-                        header.header {
-                            margin-bottom: 1rem !important;
+                        .toolbar-btn {
+                            background: transparent;
+                            border: 1px solid transparent;
+                            color: #94a3b8;
+                            padding: 0.4rem;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            transition: all 0.2s;
                         }
 
-                        h1 {
-                            font-size: 16pt !important;
+                        .toolbar-btn:hover {
+                            background: #334155;
+                            color: white;
                         }
-                    }
-                `}
-            </style>
 
-            <header className="header" style={{ marginBottom: '2rem' }}>
-                <div>
-                    <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1.875rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                        <div style={{ background: 'rgba(14, 165, 233, 0.1)', padding: '0.625rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Users size={32} color="var(--primary)" />
-                        </div>
-                        Data Petugas
-                    </h1>
-                    <p style={{ color: '#64748b', fontSize: '0.95rem', marginTop: '0.25rem' }}>Kelola daftar petugas pencatat meter lapangan</p>
-                </div>
-                <div className="header-actions no-print" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn btn-outline" onClick={exportToCSV} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <Download size={18} />
-                        </button>
-                        <button className="btn btn-outline" onClick={exportToExcel} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <FileSpreadsheet size={18} />
-                        </button>
-                        <button className="btn btn-outline" onClick={exportToPDF} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <FileText size={18} />
-                        </button>
-                        <button className="btn btn-outline" onClick={handlePrint} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <Printer size={18} />
-                        </button>
-                    </div>
-                    <button className="btn btn-primary" onClick={() => handleOpenModal()} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.625rem 1.25rem',
-                        borderRadius: '8px',
-                        fontSize: '0.95rem',
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap',
-                        boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)'
-                    }}>
-                        <Plus size={20} />
-                        <span className="hide-mobile">Tambah Petugas</span>
-                    </button>
-                </div>
-            </header>
+                        .report-paper {
+                            padding: 2.48rem;
+                            background: white;
+                            border-radius: 2px;
+                            border: none;
+                            width: 297mm;
+                            minHeight: 210mm;
+                            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                            position: relative;
+                            transition: transform 0.3s ease, box-shadow 0.3s ease;
+                        }
+                    `}
+                </style>
 
-            <div className="card">
-                <div className="no-print" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, minWidth: '300px' }}>
-                        {/* Column Toggle */}
-                        <div style={{ position: 'relative' }} ref={columnMenuRef}>
-                            <button className="btn btn-outline" onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                                style={{
-                                    height: '42px', padding: '0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.625rem',
-                                    background: isColumnMenuOpen ? '#f1f5f9' : '#f8fafc',
-                                    border: `1px solid ${isColumnMenuOpen ? 'var(--primary)' : 'var(--border)'}`,
-                                    color: isColumnMenuOpen ? 'var(--primary)' : 'var(--text)', borderRadius: '8px',
-                                    fontWeight: 600
-                                }}>
-                                <SlidersHorizontal size={18} /><span>Pilih Kolom</span>
+                {isReport && (
+                    <div className="report-toolbar no-print">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <button className="toolbar-btn" onClick={onReportClose} title="Back">
+                                <ChevronLeft size={20} />
                             </button>
-                            {isColumnMenuOpen && (
-                                <div style={{
-                                    position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 1000, background: 'white',
-                                    border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-                                    padding: '1.25rem', minWidth: '240px', maxHeight: '400px',
-                                    display: 'flex', flexDirection: 'column'
-                                }}>
-                                    <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', flexShrink: 0 }}>Tampilkan Kolom</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem', overflowY: 'auto' }}>
-                                        {ALL_COLUMNS.map(col => (
-                                            <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', padding: '0.5rem 0.75rem', fontSize: '0.875rem', borderRadius: '6px' }}
-                                                onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                                                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
-                                                <input type="checkbox" style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
-                                                    checked={visibleColumns.includes(col.id)}
-                                                    onChange={() => setVisibleColumns(prev => prev.includes(col.id) ? prev.filter(id => id !== col.id) : [...prev, col.id])} />
-                                                <span style={{ color: visibleColumns.includes(col.id) ? 'var(--text)' : 'var(--text-light)', fontWeight: visibleColumns.includes(col.id) ? 500 : 400 }}>{col.label}</span>
-                                            </label>
-                                        ))}
+                            <div style={{ borderRight: '1px solid #334155', height: '24px', margin: '0 0.5rem' }}></div>
+                            <button className="toolbar-btn" title="Print" onClick={handlePrint}><Printer size={18} /></button>
+                            <button className="toolbar-btn" title="Export PDF" onClick={exportToPDF}><FileText size={18} /></button>
+                            <button className="toolbar-btn" title="Export Excel" onClick={exportToExcel}><FileSpreadsheet size={18} /></button>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 1rem', borderRight: '1px solid #334155' }}>
+                            <button className="toolbar-btn" title="Zoom Out" onClick={handleZoomOut}><ZoomOut size={18} /></button>
+                            <button className="toolbar-btn" title="Zoom In" onClick={handleZoomIn}><ZoomIn size={18} /></button>
+                            <select
+                                onChange={(e) => handleResetZoom(e.target.value)}
+                                value={scale === 1 ? '100%' : ''}
+                                style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', fontSize: '0.75rem', borderRadius: '4px', padding: '2px 8px', height: '28px' }}
+                            >
+                                <option value="">{Math.round(scale * 100)}%</option>
+                                <option value="100%">100%</option>
+                                <option value="Lebar Halaman">Lebar Halaman</option>
+                                <option value="Satu Halaman Penuh">Satu Halaman Penuh</option>
+                            </select>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <button className="toolbar-btn" title="Fullscreen" onClick={toggleFullscreen}>
+                                {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                            </button>
+                            <button className="toolbar-btn" onClick={() => window.location.reload()} title="Refresh"><RefreshCw size={18} /></button>
+                            <button className="toolbar-btn" onClick={onReportClose} title="Tutup Viewer"><X size={18} /></button>
+                            <div style={{ position: 'relative' }}>
+                                <button className="toolbar-btn" onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)} title="Filter Kolom"><Filter size={18} /></button>
+                                {isColumnMenuOpen && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        right: 0,
+                                        marginTop: '0.5rem',
+                                        background: '#1e293b',
+                                        border: '1px solid #334155',
+                                        borderRadius: '8px',
+                                        padding: '0.75rem',
+                                        width: '200px',
+                                        zIndex: 1200,
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+                                    }}>
+                                        <div style={{ paddingBottom: '0.5rem', borderBottom: '1px solid #334155', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                                            Tampilkan Kolom
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                            {ALL_COLUMNS.map(col => (
+                                                <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#e2e8f0', fontSize: '0.8125rem', cursor: 'pointer', padding: '4px', borderRadius: '4px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={visibleColumns.includes(col.id)}
+                                                        onChange={() => {
+                                                            setVisibleColumns(prev =>
+                                                                prev.includes(col.id) ? prev.filter(c => c !== col.id) : [...prev, col.id]
+                                                            );
+                                                        }}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                    {col.label}
+                                                </label>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '1rem', flexShrink: 0 }}>
-                                        <button
-                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
-                                            onClick={() => setVisibleColumns(ALL_COLUMNS.map(c => c.id))}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(14, 165, 233, 0.05)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                                        >Pilih Semua</button>
-                                        <button
-                                            style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
-                                            onClick={() => setVisibleColumns(DEFAULT_COLUMNS)}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                                        >Reset Default</button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {!isReport && (
+                    <header className="header" style={{ marginBottom: '1.5rem' }}>
+                        <div>
+                            <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1.875rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
+                                <div style={{ background: 'rgba(14, 165, 233, 0.1)', padding: '0.625rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Users size={32} color="var(--primary)" />
+                                </div>
+                                Data Petugas
+                            </h1>
+                            <p style={{ color: '#64748b', fontSize: '0.95rem', marginTop: '0.25rem' }}>Manajemen data petugas pencatat meter</p>
+                        </div>
+                        <div className="header-actions no-print" style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button className="btn btn-outline" onClick={exportToCSV} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <Download size={18} />
+                            </button>
+                            <button className="btn btn-outline" onClick={exportToExcel} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <FileSpreadsheet size={18} />
+                            </button>
+                            <button className="btn btn-outline" onClick={exportToPDF} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <FileText size={18} />
+                            </button>
+                            <button className="btn btn-outline" onClick={handlePrint} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <Printer size={18} />
+                            </button>
+                            <button className="btn btn-primary" onClick={() => handleOpenModal()} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.625rem 1.25rem',
+                                borderRadius: '8px',
+                                fontSize: '0.95rem',
+                                fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)'
+                            }}>
+                                <Plus size={20} />
+                                <span className="hide-mobile">Tambah Petugas</span>
+                            </button>
+                        </div>
+                    </header>
+                )}
+
+                <div style={{
+                    background: isReport ? '#334155' : 'transparent',
+                    margin: isReport ? '-1.5rem' : '0',
+                    padding: isReport ? '3rem 1.5rem' : '0',
+                    minHeight: isReport ? 'calc(100vh - 100px)' : '0',
+                    justifyContent: 'center',
+                    display: isReport ? 'flex' : 'flex',
+                    flexDirection: 'column',
+                    flex: 1,
+                    overflowY: isReport ? 'auto' : 'hidden'
+                }}>
+                    <div
+                        style={{
+                            padding: isReport ? '2.48rem' : '1.5rem',
+                            background: 'white',
+                            borderRadius: isReport ? '2px' : '16px',
+                            border: isReport ? 'none' : '1px solid var(--border)',
+                            width: isReport ? '297mm' : '100%',
+                            minHeight: isReport ? '210mm' : '0',
+                            // height: isReport ? 'auto' : '100%', // Removed to allow flex shrinking
+                            boxShadow: isReport ? '0 25px 50px -12px rgba(0, 0, 0, 0.5)' : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            position: 'relative',
+                            transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                            transform: isReport ? `scale(${scale})` : 'none',
+                            transformOrigin: 'top center',
+                            flex: 1,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: isReport ? 'hidden' : 'visible'
+                        }}>
+                        {isReport && (
+                            <div className="report-content-header" style={{ marginBottom: '3rem', borderBottom: '2px solid #334155', paddingBottom: '2rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '3rem', marginBottom: '2rem' }}>
+                                    <div style={{ background: '#0ea5e9', padding: '1rem', borderRadius: '12px' }}>
+                                        <Building2 size={48} color="white" />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <h2 style={{ margin: 0, fontSize: '2.25rem', color: '#0ea5e9', fontWeight: 900, letterSpacing: '-0.025em' }}>PDAM SMART Indramayu</h2>
+                                        <p style={{ margin: '0.25rem 0', color: '#475569', fontSize: '1.125rem', fontWeight: 600 }}>Sistem Informasi Manajemen Pelanggan Terintegrasi</p>
+                                        <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>Jl. Unit Pelayanan No. 45, Kab. Indramayu | Telp: (0234) 123456</p>
+                                    </div>
+                                    <div style={{ textAlign: 'right', borderLeft: '1px solid #e2e8f0', paddingLeft: '2rem' }}>
+                                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Kode Dokumen</p>
+                                        <p style={{ margin: 0, fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>RPT-OFF-001</p>
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                                <div style={{ textAlign: 'center', position: 'relative' }}>
+                                    <div style={{ height: '4px', background: '#0ea5e9', width: '60px', margin: '0 auto 1.5rem' }}></div>
+                                    <h1 style={{ margin: 0, fontSize: '1.875rem', fontWeight: 800, color: '#0f172a', letterSpacing: '0.05em' }}>LAPORAN DATA PETUGAS</h1>
+                                    <p style={{ margin: '0.75rem 0', color: '#64748b', fontWeight: 600, fontSize: '1rem' }}>
+                                        Dicetak pada: <span style={{ color: '#0ea5e9' }}>{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
-                        {/* Search Filter */}
-                        <div style={{ position: 'relative' }} ref={searchMenuRef}>
-                            <button className="btn btn-outline" onClick={() => setIsSearchMenuOpen(!isSearchMenuOpen)}
-                                style={{
-                                    height: '42px', padding: '0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.625rem',
-                                    background: isSearchMenuOpen ? '#f1f5f9' : '#f8fafc',
-                                    border: `1px solid ${isSearchMenuOpen ? 'var(--primary)' : 'var(--border)'}`,
-                                    color: isSearchMenuOpen ? 'var(--primary)' : 'var(--text)', borderRadius: '8px', minWidth: '100px',
-                                    fontWeight: 600
-                                }}>
-                                <span>Filter</span>
-                                <ChevronDown size={16} />
-                            </button>
-                            {isSearchMenuOpen && (
-                                <div style={{
-                                    position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 1000, background: 'white',
-                                    border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 12px 30px rgba(0,0,0,0.12)', padding: '0.5rem', minWidth: '200px'
-                                }}>
-                                    {[
-                                        { id: 'nama', label: 'By Nama' },
-                                        { id: 'nik', label: 'By NIK' },
-                                        { id: 'alamat', label: 'By Alamat' },
-                                        { id: 'kode_cabang', label: 'By Cabang' },
-                                        { id: 'kode_rute', label: 'By Rute' },
-                                        { id: 'telepon', label: 'By No. Telepon' },
-                                        { id: 'tgl_masuk', label: 'By Tanggal Masuk' },
-                                        { id: 'tgl_keluar', label: 'By Tanggal Keluar' },
-                                        { id: 'status_aktif', label: 'By Status' }
-                                    ].map(opt => (
-                                        <button key={opt.id} onClick={() => { setSearchCategory(opt.id); setIsSearchMenuOpen(false); }}
-                                            style={{ width: '100%', textAlign: 'left', padding: '0.75rem 1rem', border: 'none', background: searchCategory === opt.id ? '#f1f5f9' : 'none', color: searchCategory === opt.id ? 'var(--primary)' : 'var(--text)', borderRadius: '8px', cursor: 'pointer' }}>
-                                            {opt.label}
+                        {!isReport && (
+                            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', background: '#f8fafc', padding: '1.25rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+
+                                {/* Column Visibility and Filter */}
+                                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                    <div style={{ position: 'relative' }} ref={columnMenuRef}>
+                                        <button
+                                            onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
+                                            style={{
+                                                height: '42px',
+                                                padding: '0 1.25rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.625rem',
+                                                background: isColumnMenuOpen ? '#f1f5f9' : 'white',
+                                                border: `1px solid ${isColumnMenuOpen ? 'var(--primary)' : '#e2e8f0'}`,
+                                                color: isColumnMenuOpen ? 'var(--primary)' : '#334155',
+                                                borderRadius: '8px',
+                                                fontWeight: 600,
+                                                fontSize: '0.9rem',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <SlidersHorizontal size={18} />
+                                            <span>Pilih Kolom</span>
                                         </button>
-                                    ))}
+                                        {isColumnMenuOpen && (
+                                            <div style={{
+                                                position: 'absolute', top: 'calc(100% + 8px)', left: 0,
+                                                background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
+                                                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+                                                padding: '1.25rem', zIndex: 100, minWidth: '240px'
+                                            }}>
+                                                <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem' }}>
+                                                    {ALL_COLUMNS.map(col => (
+                                                        <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.875rem', color: '#334155', borderRadius: '6px', transition: 'background 0.2s' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={visibleColumns.includes(col.id)}
+                                                                onChange={() => {
+                                                                    setVisibleColumns(prev =>
+                                                                        prev.includes(col.id) ? prev.filter(c => c !== col.id) : [...prev, col.id]
+                                                                    );
+                                                                }}
+                                                                style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                                                            />
+                                                            <span>{col.label}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ position: 'relative' }} ref={searchMenuRef}>
+                                        <button
+                                            onClick={() => setIsSearchMenuOpen(!isSearchMenuOpen)}
+                                            style={{
+                                                height: '42px',
+                                                padding: '0 1.25rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.625rem',
+                                                background: isSearchMenuOpen ? '#f1f5f9' : 'white',
+                                                border: `1px solid ${isSearchMenuOpen ? 'var(--primary)' : '#e2e8f0'}`,
+                                                color: isSearchMenuOpen ? 'var(--primary)' : '#334155',
+                                                borderRadius: '8px',
+                                                minWidth: '100px',
+                                                fontSize: '0.9rem',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <ChevronDown size={14} style={{ transform: isSearchMenuOpen ? 'rotate(180deg)' : 'none' }} />
+                                            Filter: {searchCategory === 'nama' ? 'Nama' : searchCategory === 'nik' ? 'NIK' : 'Alamat'}
+                                        </button>
+                                        {isSearchMenuOpen && (
+                                            <div style={{
+                                                position: 'absolute', top: 'calc(100% + 8px)', left: 0,
+                                                background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
+                                                boxShadow: '0 12px 30px rgba(0,0,0,0.12)',
+                                                padding: '0.5rem', zIndex: 100, minWidth: '200px'
+                                            }}>
+                                                {['nama', 'nik', 'alamat'].map(opt => (
+                                                    <button
+                                                        key={opt}
+                                                        onClick={() => { setSearchCategory(opt); setIsSearchMenuOpen(false); }}
+                                                        style={{
+                                                            width: '100%', textAlign: 'left', padding: '0.75rem 1rem', border: 'none',
+                                                            background: searchCategory === opt ? '#f1f5f9' : 'none',
+                                                            color: searchCategory === opt ? 'var(--primary)' : '#334155',
+                                                            fontWeight: searchCategory === opt ? 600 : 400
+                                                        }}
+                                                    >
+                                                        {opt === 'nama' ? 'Nama Petugas' : opt === 'nik' ? 'NIK' : 'Alamat'}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
 
-                        {/* Search Input */}
-                        <div style={{ position: 'relative', flex: '0 1 350px' }}>
-                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
-                            <input style={{ paddingLeft: '2.5rem', paddingRight: searchTerm ? '2.5rem' : '0.625rem', height: '42px', borderRadius: '8px', border: '1px solid var(--border)', background: '#f8fafc', width: '100%' }}
-                                placeholder={`Cari ${searchCategory === 'nama' ? 'Nama' : searchCategory === 'nik' ? 'NIK' : 'Alamat'}...`}
-                                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                            {searchTerm && <button onClick={() => setSearchTerm('')} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}><X size={16} /></button>}
-                        </div>
-                    </div>
+                                {/* Search Bar */}
+                                <div style={{ position: 'relative', width: '300px' }}>
+                                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                                    <input
+                                        type="text"
+                                        placeholder={`Cari ${searchCategory}...`}
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            height: '42px',
+                                            padding: '0.5rem 0.5rem 0.5rem 2.5rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid #e2e8f0',
+                                            fontSize: '0.875rem',
+                                            outline: 'none',
+                                            transition: 'all 0.2s',
+                                            background: 'white'
+                                        }}
+                                    />
+                                    {searchTerm && (
+                                        <button
+                                            onClick={() => setSearchTerm('')}
+                                            style={{
+                                                position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                                                background: 'none', border: 'none', padding: '4px', cursor: 'pointer',
+                                                color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%'
+                                            }}
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
-                    {/* Pagination Info */}
-                    {!loading && filteredOfficers.length > 0 && (
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <button className="btn btn-outline" style={{ height: '32px', width: '32px', padding: 0, borderRadius: '6px' }} disabled={currentPage === 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}><ChevronLeft size={16} /></button>
-                            <span style={{ fontSize: '0.875rem' }}>Halaman <strong>{currentPage}</strong> dari {totalPages}</span>
-                            <button className="btn btn-outline" style={{ height: '32px', width: '32px', padding: 0, borderRadius: '6px' }} disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}><ChevronRight size={16} /></button>
-                        </div>
-                    )}
-                </div>
-
-                <div className="table-container" style={{ maxHeight: 'calc(100vh - 350px)', overflowY: 'auto', margin: '1rem -1rem 0', width: 'calc(100% + 2rem)' }}>
-                    <table className="customer-table">
-                        <thead>
-                            <tr>
-                                <th className="sticky-col-left" style={{ width: '60px', textAlign: 'center' }}>NO</th>
-                                {visibleColumns.map(colId => {
-                                    const col = ALL_COLUMNS.find(c => c.id === colId);
-                                    if (!col) return null;
-
-                                    // Define specific styles for each column
-                                    let style = {
-                                        padding: '0.625rem 0.75rem',
-                                        whiteSpace: 'nowrap',
-                                        fontSize: '0.8rem',
-                                        fontWeight: 700,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        background: '#f8fafc'
-                                    };
-
-                                    switch (colId) {
-                                        case 'id':
-                                            style = { ...style, minWidth: '60px', textAlign: 'center' };
-                                            break;
-                                        case 'nik':
-                                            style = { ...style, minWidth: '110px', textAlign: 'left' };
-                                            break;
-                                        case 'ktp':
-                                            style = { ...style, minWidth: '130px', textAlign: 'left' };
-                                            break;
-                                        case 'kode_cabang':
-                                            style = { ...style, minWidth: '80px', textAlign: 'center' };
-                                            break;
-                                        case 'kode_rute':
-                                            style = { ...style, minWidth: '80px', textAlign: 'center' };
-                                            break;
-                                        case 'nama':
-                                            style = { ...style, minWidth: '220px', textAlign: 'left' };
-                                            break;
-                                        case 'foto_petugas':
-                                            style = { ...style, minWidth: '80px', textAlign: 'center' };
-                                            break;
-                                        case 'alamat':
-                                            style = { ...style, minWidth: '280px', textAlign: 'left' };
-                                            break;
-                                        case 'telepon':
-                                            style = { ...style, minWidth: '120px', textAlign: 'left' };
-                                            break;
-                                        case 'tgl_masuk':
-                                        case 'tgl_keluar':
-                                            style = { ...style, minWidth: '110px', textAlign: 'center' };
-                                            break;
-                                        case 'status_aktif':
-                                            style = { ...style, minWidth: '100px', textAlign: 'center' };
-                                            break;
-                                        case 'update_date':
-                                            style = { ...style, minWidth: '150px', textAlign: 'left' };
-                                            break;
-                                        default:
-                                            style = { ...style, minWidth: '150px', textAlign: 'left' };
-                                    }
-
-                                    return <th key={colId} style={style}>{col.label}</th>
-                                })}
-                                <th className="no-print sticky-col-right" style={{ width: '100px', textAlign: 'center', background: '#f8fafc', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>AKSI</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan={visibleColumns.length + 2} style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>Memuat data...</td></tr>
-                            ) : currentItems.length === 0 ? (
-                                <tr><td colSpan={visibleColumns.length + 2} style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>Tidak ada data ditemukan</td></tr>
-                            ) : (
-                                currentItems.map((item, index) => (
-                                    <tr key={item.id}>
-                                        <td className="sticky-col-left" style={{ textAlign: 'center', fontWeight: 500, color: '#64748b', padding: '12px 16px' }}>{index + 1 + (currentPage - 1) * itemsPerPage}</td>
-                                        {visibleColumns.map(colId => {
-                                            const cellPadding = '12px 16px';
-
-                                            if (colId === 'status_aktif') {
-                                                return (
-                                                    <td key={colId} style={{ textAlign: 'center', padding: cellPadding }}>
-                                                        <span className={`badge ${item.status_aktif === 'Aktif' ? 'badge-active' : 'badge-inactive'}`}>
-                                                            {item[colId] || '-'}
+                        <div className="table-container" style={{
+                            flex: 1,
+                            overflow: 'auto',
+                            minHeight: 0,
+                            marginTop: '1rem',
+                            border: '1px solid var(--border)',
+                            borderRadius: '8px'
+                        }}>
+                            <table className="customer-table">
+                                <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                                    <tr>
+                                        <th style={{ width: '60px', textAlign: 'center', borderBottom: isReport ? '2px solid #e2e8f0' : 'none', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>NO</th>
+                                        {ALL_COLUMNS.map(col => visibleColumns.includes(col.id) && (
+                                            <th key={col.id} onClick={isReport ? null : () => handleSort(col.id)} style={{
+                                                cursor: isReport ? 'default' : 'pointer',
+                                                userSelect: 'none',
+                                                textAlign: ['foto_petugas', 'status_aktif'].includes(col.id) ? 'center' : 'left',
+                                                borderBottom: isReport ? '2px solid #e2e8f0' : 'none',
+                                                borderRight: isReport ? '1px solid #e2e8f0' : 'none'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: ['foto_petugas', 'status_aktif'].includes(col.id) ? 'center' : 'flex-start', gap: '0.5rem' }}>
+                                                    {col.label} {!isReport && getSortIcon(col.id)}
+                                                </div>
+                                            </th>
+                                        ))}
+                                        {!isReport && <th style={{ width: '100px', textAlign: 'center' }}>AKSI</th>}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {loading ? (
+                                        <tr>
+                                            <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', padding: '3rem' }}>
+                                                Loading...
+                                            </td>
+                                        </tr>
+                                    ) : currentItems.length > 0 ? (
+                                        currentItems.map((officer, index) => (
+                                            <tr key={officer.id || index} style={{ borderBottom: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                <td style={{ textAlign: 'center', color: '#64748b', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{indexOfFirstItem + index + 1}</td>
+                                                {visibleColumns.includes('nik') && <td style={{ fontWeight: 500, borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{officer.nik}</td>}
+                                                {visibleColumns.includes('ktp') && <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{officer.ktp || '-'}</td>}
+                                                {visibleColumns.includes('nama_cabang') && <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{officer.nama_cabang || '-'}</td>}
+                                                {visibleColumns.includes('kode_rute') && (
+                                                    <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                        <button
+                                                            onClick={() => handleViewRoutes(officer)}
+                                                            style={{
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                padding: '4px 10px', borderRadius: '6px',
+                                                                background: '#eff6ff', color: 'var(--primary)',
+                                                                border: 'none', fontSize: '0.75rem', fontWeight: 600,
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            <List size={14} /> Lihat Rute
+                                                        </button>
+                                                    </td>
+                                                )}
+                                                {visibleColumns.includes('nama') && <td style={{ fontWeight: 600, color: '#0f172a', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{officer.nama}</td>}
+                                                {visibleColumns.includes('foto_petugas') && (
+                                                    <td style={{ textAlign: 'center', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                        {officer.foto_petugas ? (
+                                                            <img
+                                                                src={officer.foto_petugas.startsWith('/') ? `${API_BASE_URL}${officer.foto_petugas}` : officer.foto_petugas}
+                                                                alt="Foto"
+                                                                style={{
+                                                                    width: '36px', height: '36px', objectFit: 'cover',
+                                                                    borderRadius: '8px', cursor: 'pointer',
+                                                                    border: '1px solid #e2e8f0'
+                                                                }}
+                                                                onClick={() => setPreviewImage(officer.foto_petugas)}
+                                                            />
+                                                        ) : (
+                                                            <div style={{
+                                                                width: '36px', height: '36px', borderRadius: '8px', background: '#f1f5f9',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                margin: '0 auto', color: '#cbd5e1'
+                                                            }}>
+                                                                <User size={18} />
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                )}
+                                                {visibleColumns.includes('alamat') && <td style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{officer.alamat || '-'}</td>}
+                                                {visibleColumns.includes('telepon') && <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{officer.telepon || '-'}</td>}
+                                                {visibleColumns.includes('tgl_masuk') && <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{formatDate(officer.tgl_masuk)}</td>}
+                                                {visibleColumns.includes('tgl_keluar') && <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{formatDate(officer.tgl_keluar)}</td>}
+                                                {visibleColumns.includes('status_aktif') && (
+                                                    <td style={{ textAlign: 'center', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                        <span className={`badge ${officer.status_aktif === 'Aktif' ? 'badge-active' : 'badge-inactive'}`}>
+                                                            {officer.status_aktif}
                                                         </span>
                                                     </td>
-                                                );
-                                            }
-                                            if (colId === 'foto_petugas') {
-                                                return (
-                                                    <td key={colId} style={{ width: '80px', textAlign: 'center', padding: cellPadding }}>
-                                                        <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', border: '1px solid #e2e8f0', color: '#94a3b8', overflow: 'hidden', cursor: item.foto_petugas ? 'pointer' : 'default' }}
-                                                            onClick={() => item.foto_petugas && setPreviewImage(item.foto_petugas)}
-                                                            title={item.foto_petugas ? 'Klik untuk memperbesar' : 'Tidak ada foto'}>
-                                                            {item.foto_petugas ? (
-                                                                <img
-                                                                    src={item.foto_petugas && item.foto_petugas.startsWith('/') ? `${API_BASE_URL}${item.foto_petugas}` : item.foto_petugas}
-                                                                    alt="Foto"
-                                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                    onError={(e) => {
-                                                                        e.target.onerror = null;
-                                                                        e.target.style.display = 'none';
-                                                                        e.target.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;width:100%"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></div>';
-                                                                    }}
-                                                                />
-                                                            ) : <Camera size={16} />}
+                                                )}
+                                                {visibleColumns.includes('update_date') && <td style={{ borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{formatDate(officer.update_date)}</td>}
+                                                {!isReport && (
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
+                                                            <button
+                                                                className="btn btn-outline"
+                                                                onClick={() => handleOpenModal(officer)}
+                                                                title="Edit"
+                                                                style={{
+                                                                    padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px',
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                                }}
+                                                            >
+                                                                <Edit2 size={14} />
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-outline"
+                                                                onClick={() => handleDelete(officer.id)}
+                                                                title="Hapus"
+                                                                style={{
+                                                                    padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px',
+                                                                    color: '#ef4444',
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                                }}
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
                                                         </div>
                                                     </td>
-                                                );
-                                            }
-
-                                            // Center align specific columns
-                                            const isCentered = ['id', 'kode_cabang', 'kode_rute', 'tgl_masuk', 'tgl_keluar'].includes(colId);
-
-                                            return <td key={colId} style={{
-                                                textAlign: isCentered ? 'center' : 'left',
-                                                padding: cellPadding,
-                                                fontWeight: colId === 'nama' ? 600 : 400,
-                                                color: colId === 'nama' ? '#334155' : 'inherit'
-                                            }}>{
-                                                    colId === 'kode_rute'
-                                                        ? (Array.isArray(item[colId]) && item[colId].length > 0
-                                                            ? (item[colId].length > 1 ? `${item[colId][0]},` : item[colId][0])
-                                                            : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.8rem' }}>Belum ada Rute</span>)
-                                                        : (item[colId] || '-')
-                                                }</td>
-                                        })}
-                                        <td className="no-print sticky-col-right" style={{ textAlign: 'center', background: 'inherit', padding: '0.625rem 0.75rem' }}>
-                                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                                                <button className="btn btn-outline" style={{ padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px' }} onClick={() => handleOpenModal(item)} title="Edit"><Edit2 size={14} /></button>
-                                                <button className="btn btn-outline" style={{ padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px', color: '#ef4444' }} onClick={() => handleDelete(item.id)} title="Hapus"><Trash2 size={14} /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {/* Image Preview Modal */}
-            {previewImage && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}
-                    onClick={() => setPreviewImage(null)}>
-                    <img src={previewImage && previewImage.startsWith('/') ? `${API_BASE_URL}${previewImage}` : previewImage} alt="Full Preview" style={{ maxWidth: '90%', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }} />
-                    <button style={{ position: 'absolute', top: '2rem', right: '2rem', background: 'white', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        onClick={() => setPreviewImage(null)}>
-                        <X size={24} color="#000" />
-                    </button>
-                </div>
-            )}
-
-            {/* Modal Form */}
-            {isModalOpen && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: 'white', borderRadius: '20px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'slideUp 0.3s ease-out' }}>
-                        <div style={{ padding: '1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'white', zIndex: 10 }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                {editingOfficer ? <Edit2 size={24} color="var(--primary)" /> : <Plus size={24} color="var(--primary)" />}
-                                {editingOfficer ? 'Edit Petugas' : 'Tambah Petugas'}
-                            </h2>
-                            <button
-                                onClick={handleCloseModal}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#94a3b8',
-                                    cursor: 'pointer',
-                                    padding: '0.5rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    transition: 'color 0.2s'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.color = '#64748b'}
-                                onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
-                            >
-                                <X size={24} />
-                            </button>
+                                                )}
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+                                                Tidak ada data petugas ditemukan
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
-                        <form onSubmit={handleSubmit} style={{ padding: '2rem' }}>
-                            <div className="grid-6-col-responsive">
-                                <div className="form-group" style={{ gridColumn: 'span 6' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem' }}>
-                                        <div style={{ textAlign: 'center' }}>
+
+                        <Pagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            totalItems={sortedOfficers.length}
+                            itemsPerPage={itemsPerPage}
+                            setItemsPerPage={setItemsPerPage}
+                            setCurrentPage={setCurrentPage}
+                            indexOfFirstItem={indexOfFirstItem}
+                            indexOfLastItem={indexOfLastItem}
+                        />
+
+                    </div>
+                </div>
+
+                {/* Image Preview Modal outside of animated container */}
+                <div onClick={e => e.stopPropagation()}>
+                    <SimpleImageViewer
+                        isOpen={!!previewImage}
+                        onClose={() => setPreviewImage(null)}
+                        imageSrc={previewImage && previewImage.startsWith('/') ? `${API_BASE_URL}${previewImage}` : previewImage}
+                        onSaveRotation={handleSaveRotation}
+                    />    </div>
+
+                {/* Other Modals (Edit, Route Detail, Route Select) */}
+                {isModalOpen && (
+                    <div className="modal-overlay" onClick={handleCloseModal}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '1rem' }}>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>
+                                    {editingOfficer ? 'Edit Data Petugas' : 'Tambah Petugas Baru'}
+                                </h2>
+                                <button onClick={handleCloseModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                                    <X size={24} />
+                                </button>
+                            </div>
+                            <form onSubmit={handleSubmit}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                                    {/* Left Column */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+                                        {/* Photo Upload */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '0.5rem' }}>
                                             <div style={{
-                                                width: '180px',
-                                                height: '140px',
-                                                border: '2px dashed #cbd5e1',
-                                                borderRadius: '16px',
-                                                padding: '0',
-                                                background: '#f8fafc',
-                                                transition: 'all 0.3s',
-                                                cursor: 'pointer',
-                                                position: 'relative',
-                                                overflow: 'hidden',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}
-                                                onClick={() => document.getElementById('foto-upload').click()}
-                                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = '#f1f5f9'; }}
-                                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}>
-
-                                                <input id="foto-upload" type="file" accept="image/*" style={{ display: 'none' }}
-                                                    onChange={(e) => handleFileChange(e, 'foto')}
-                                                />
-
+                                                width: '120px', height: '120px', borderRadius: '50%', overflow: 'hidden',
+                                                background: '#f1f5f9', border: '2px dashed #cbd5e1', position: 'relative',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                            }}>
                                                 {formData.foto_petugas ? (
-                                                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                                                        <img src={formData.foto_petugas} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.5), transparent)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '1rem' }}>
-                                                            <span style={{ color: 'white', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                <Camera size={16} /> Ganti Foto
-                                                            </span>
-                                                        </div>
+                                                    <img
+                                                        src={formData.foto_petugas.startsWith('data:') || formData.foto_petugas.startsWith('blob:') ? formData.foto_petugas : (formData.foto_petugas.startsWith('/') ? `${API_BASE_URL}${formData.foto_petugas}` : formData.foto_petugas)}
+                                                        alt="Preview"
+                                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                    />
+                                                ) : (
+                                                    <User size={48} color="#cbd5e1" />
+                                                )}
+                                                {isUploading && (
+                                                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <label style={{
+                                                marginTop: '0.75rem', padding: '0.5rem 1rem', background: '#eff6ff',
+                                                color: 'var(--primary)', borderRadius: '6px', fontSize: '0.875rem',
+                                                fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                            }}>
+                                                <Camera size={16} /> Upload Foto
+                                                <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
+                                            </label>
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>NIK <span style={{ color: 'red' }}>*</span></label>
+                                            <input
+                                                type="text"
+                                                value={formData.nik}
+                                                onChange={(e) => setFormData({ ...formData, nik: e.target.value })}
+                                                required
+                                                placeholder="Nomor Induk Karyawan"
+                                                style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>No. KTP <span style={{ color: 'red' }}>*</span></label>
+                                            <input
+                                                type="text"
+                                                value={formData.ktp}
+                                                onChange={(e) => setFormData({ ...formData, ktp: e.target.value })}
+                                                required
+                                                placeholder="Nomor KTP"
+                                                style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Nama Lengkap <span style={{ color: 'red' }}>*</span></label>
+                                            <input
+                                                type="text"
+                                                value={formData.nama}
+                                                onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
+                                                required
+                                                placeholder="Nama petugas"
+                                                style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>No. Telepon</label>
+                                            <input
+                                                type="text"
+                                                value={formData.telepon}
+                                                onChange={(e) => setFormData({ ...formData, telepon: e.target.value })}
+                                                placeholder="08xxxxxxxxxx"
+                                                style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Right Column */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+                                        <SearchableSelect
+                                            label="Cabang"
+                                            placeholder="-- Pilih Cabang --"
+                                            options={branches.map(b => ({ value: b.kode_cabang, label: b.cabang }))}
+                                            value={formData.kode_cabang}
+                                            onChange={(e) => setFormData({ ...formData, kode_cabang: e.target.value })}
+                                            required={true}
+                                        />
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Rute Baca Meter</label>
+                                            <div style={{
+                                                border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.5rem',
+                                                maxHeight: '150px', overflowY: 'auto', background: '#f8fafc'
+                                            }}>
+                                                {routes.length > 0 ? (
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                                        {routes.map(r => (
+                                                            <label key={r.kode_rute} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={formData.kode_rute.includes(r.kode_rute)}
+                                                                    onChange={(e) => {
+                                                                        const checked = e.target.checked;
+                                                                        setFormData(prev => {
+                                                                            const current = [...prev.kode_rute];
+                                                                            if (checked) return { ...prev, kode_rute: [...current, r.kode_rute] };
+                                                                            return { ...prev, kode_rute: current.filter(c => c !== r.kode_rute) };
+                                                                        });
+                                                                    }}
+                                                                    style={{ accentColor: 'var(--primary)' }}
+                                                                />
+                                                                <span title={r.rute}>{r.kode_rute}</span>
+                                                            </label>
+                                                        ))}
                                                     </div>
                                                 ) : (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
-                                                        <Camera size={32} />
-                                                        <span style={{ fontSize: '0.75rem', marginTop: '0.5rem', fontWeight: 500 }}>Ambil Foto</span>
+                                                    <div style={{ fontSize: '0.85rem', color: '#64748b', textAlign: 'center', padding: '1rem' }}>
+                                                        {formData.kode_cabang ? 'Tidak ada rute tersedia' : 'Pilih cabang terlebih dahulu'}
                                                     </div>
                                                 )}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                                {formData.kode_rute.length} rute dipilih
+                                            </div>
+                                        </div>
 
-                                                {/* Upload Progress Overlay */}
-                                                {isUploading && (
-                                                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
-                                                        <div style={{ width: '48px', height: '48px', border: '4px solid #e2e8f0', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '1rem' }}></div>
-                                                        <span style={{ fontWeight: 600, color: 'var(--primary)' }}>Mengupload... {Math.round(uploadProgress)}%</span>
-                                                    </div>
-                                                )}
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Alamat</label>
+                                            <textarea
+                                                value={formData.alamat}
+                                                onChange={(e) => setFormData({ ...formData, alamat: e.target.value })}
+                                                placeholder="Alamat lengkap"
+                                                rows={3}
+                                                style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem', resize: 'vertical' }}
+                                            />
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Tgl Masuk</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.tgl_masuk}
+                                                    onChange={(e) => setFormData({ ...formData, tgl_masuk: e.target.value })}
+                                                    style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                                                />
                                             </div>
-                                            <div style={{
-                                                background: 'rgba(30, 41, 59, 0.7)', color: 'white', fontSize: '0.65rem', padding: '6px', fontWeight: 600, letterSpacing: '0.025em',
-                                                borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', marginTop: '-24px', position: 'relative', zIndex: 5, width: '180px', marginInline: 'auto'
-                                            }}>
-                                                FOTO PETUGAS
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Tgl Keluar</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.tgl_keluar}
+                                                    onChange={(e) => setFormData({ ...formData, tgl_keluar: e.target.value })}
+                                                    style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                                                />
                                             </div>
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Status</label>
+                                            <select
+                                                value={formData.status_aktif}
+                                                onChange={(e) => setFormData({ ...formData, status_aktif: e.target.value })}
+                                                style={{ width: '100%', padding: '0.625rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white' }}
+                                            >
+                                                <option value="Aktif">Aktif</option>
+                                                <option value="Non-Aktif">Non-Aktif</option>
+                                            </select>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>NIK</label>
-                                    <input type="number" className="input-field" placeholder="NIK Petugas" value={formData.nik} onChange={(e) => setFormData({ ...formData, nik: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                                <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', borderTop: '1px solid #f1f5f9', paddingTop: '1.5rem' }}>
+                                    <button
+                                        type="button"
+                                        onClick={handleCloseModal}
+                                        style={{
+                                            padding: '0.75rem 1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0',
+                                            background: 'white', color: '#64748b', fontWeight: 600, cursor: 'pointer'
+                                        }}
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        style={{
+                                            padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none',
+                                            background: 'var(--primary)', color: 'white', fontWeight: 600, cursor: 'pointer',
+                                            opacity: loading ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                        }}
+                                    >
+                                        {loading ? <div className="spin" style={{ width: '16px', height: '16px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%' }}></div> : <Save size={18} />}
+                                        {editingOfficer ? 'Simpan Perubahan' : 'Simpan Data'}
+                                    </button>
                                 </div>
-                                <div className="form-group" style={{ gridColumn: 'span 4' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>Nama Lengkap</label>
-                                    <input type="text" required className="input-field" placeholder="Nama Petugas" value={formData.nama} onChange={(e) => setFormData({ ...formData, nama: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                                </div>
-                                <div className="form-group" style={{ gridColumn: 'span 6' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>Alamat</label>
-                                    <textarea rows="2" className="input-field" placeholder="Alamat Lengkap" value={formData.alamat} onChange={(e) => setFormData({ ...formData, alamat: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}></textarea>
-                                </div>
-                                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>No. Telepon</label>
-                                    <input type="text" className="input-field" placeholder="08xxx" value={formData.telepon} onChange={(e) => setFormData({ ...formData, telepon: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                                </div>
-                                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>No. KTP</label>
-                                    <input type="text" className="input-field" placeholder="Nomor KTP" value={formData.ktp} onChange={(e) => setFormData({ ...formData, ktp: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                                </div>
-                                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>Status Aktif</label>
-                                    <select className="input-field" value={formData.status_aktif} onChange={(e) => setFormData({ ...formData, status_aktif: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                        <option value="Aktif">Aktif</option>
-                                        <option value="Tidak Aktif">Tidak Aktif</option>
-                                    </select>
-                                </div>
-                                <div className="form-group" style={{ gridColumn: 'span 3' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>Tanggal Masuk</label>
-                                    <input type="date" className="input-field" value={formData.tgl_masuk} onChange={(e) => setFormData({ ...formData, tgl_masuk: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                                </div>
-                                <div className="form-group" style={{ gridColumn: 'span 3' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>Tanggal Keluar</label>
-                                    <input type="date" className="input-field" value={formData.tgl_keluar} onChange={(e) => setFormData({ ...formData, tgl_keluar: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                                </div>
-                                <div style={{ display: 'contents' }}>
-                                    <SearchableSelect
-                                        label="Cabang"
-                                        containerStyle={{ gridColumn: 'span 3', marginBottom: 0 }}
-                                        options={branches.map(b => ({ value: b.kode_cabang, label: b.cabang }))}
-                                        value={formData.kode_cabang}
-                                        onChange={(e) => setFormData({ ...formData, kode_cabang: e.target.value, kode_rute: [] })}
-                                        placeholder="Pilih Cabang"
-                                        searchPlaceholder="Cari cabang..."
-                                        required={true}
-                                    />
+                            </form>
+                        </div>
+                    </div>
+                )}
 
-                                    {/* Route Selection */}
-                                    <div className="form-group" style={{ gridColumn: 'span 3', marginBottom: 0 }}>
-                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#64748b' }}>Rute yang Ditangani</label>
-                                        <button
-                                            type="button"
-                                            disabled={!formData.kode_cabang}
-                                            onClick={() => setIsRouteSelectOpen(true)}
-                                            style={{
-                                                width: '100%',
-                                                padding: '0.75rem',
-                                                borderRadius: '8px',
-                                                border: '1px solid #e2e8f0',
-                                                background: formData.kode_cabang ? 'white' : '#f8fafc',
-                                                textAlign: 'left',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                cursor: formData.kode_cabang ? 'pointer' : 'not-allowed',
-                                                color: formData.kode_cabang ? '#334155' : '#94a3b8'
-                                            }}
-                                        >
-                                            <span>{formData.kode_rute.length > 0 ? `${formData.kode_rute.length} Rute Dipilih` : (formData.kode_cabang ? 'Pilih Rute' : 'Pilih Cabang Dahulu')}</span>
-                                            <List size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
-                                <button type="button" onClick={handleCloseModal} className="btn btn-outline" style={{ padding: '0.625rem 1.5rem', borderRadius: '8px', fontWeight: 600 }}>Batal</button>
-                                <button type="submit" className="btn btn-primary" style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.625rem 2rem',
-                                    borderRadius: '8px',
-                                    fontWeight: 600,
-                                    boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)'
-                                }}>
-                                    <Save size={18} /> Simpan
+                {/* Route Detail Modal */}
+                {isRouteDetailModalOpen && (
+                    <div className="modal-overlay" onClick={() => setIsRouteDetailModalOpen(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '1rem' }}>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>
+                                    Detail Rute
+                                </h2>
+                                <button onClick={() => setIsRouteDetailModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                                    <X size={24} />
                                 </button>
                             </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
-            {/* Route Selection Modal */}
-            {isRouteSelectOpen && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
-                    <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
-                        {/* Header */}
-                        <div style={{ padding: '1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0f172a' }}>Pilih Rute</h3>
-                            <button onClick={() => setIsRouteSelectOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
-                                <X size={24} />
-                            </button>
-                        </div>
+                            <div style={{ marginBottom: '1rem' }}>
+                                <div style={{ fontSize: '0.875rem', color: '#64748b' }}>Nama Petugas</div>
+                                <div style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>{selectedOfficerRoutes?.nama}</div>
+                            </div>
 
-                        {/* Search */}
-                        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
-                            <div style={{ position: 'relative' }}>
-                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                            <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem' }}>
                                 <input
-                                    autoFocus
-                                    placeholder="Ketik untuk mencari rute..."
-                                    value={routeSearch}
-                                    onChange={(e) => setRouteSearch(e.target.value)}
-                                    style={{
-                                        paddingLeft: '2.5rem',
-                                        paddingRight: routeSearch ? '2.5rem' : '1rem',
-                                        height: '44px',
-                                        borderRadius: '8px',
-                                        border: '2px solid var(--primary)',
-                                        width: '100%',
-                                        fontSize: '0.95rem',
-                                        boxShadow: '0 0 0 3px rgba(14, 165, 233, 0.1)'
-                                    }}
+                                    type="text"
+                                    placeholder="Cari rute..."
+                                    value={routeDetailSearch}
+                                    onChange={(e) => setRouteDetailSearch(e.target.value)}
+                                    style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.875rem' }}
                                 />
-                                {routeSearch && (
-                                    <button
-                                        onClick={() => setRouteSearch('')}
-                                        style={{
-                                            position: 'absolute',
-                                            right: '12px',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            background: '#e2e8f0',
-                                            border: 'none',
-                                            borderRadius: '50%',
-                                            width: '20px',
-                                            height: '20px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: 'pointer',
-                                            color: '#64748b',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.background = '#cbd5e1';
-                                            e.currentTarget.style.color = '#334155';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.background = '#e2e8f0';
-                                            e.currentTarget.style.color = '#64748b';
-                                        }}
-                                        title="Clear search"
-                                    >
-                                        <X size={14} />
-                                    </button>
+                            </div>
+
+                            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                {selectedOfficerRoutes?.routes.length > 0 ? (
+                                    <table className="customer-table" style={{ margin: 0 }}>
+                                        <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                                            <tr>
+                                                <th style={{ padding: '0.75rem', fontSize: '0.75rem' }}>Kode Rute</th>
+                                                <th style={{ padding: '0.75rem', fontSize: '0.75rem' }}>Nama Rute</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selectedOfficerRoutes.routes
+                                                .filter(r =>
+                                                    r.code.toLowerCase().includes(routeDetailSearch.toLowerCase()) ||
+                                                    r.name.toLowerCase().includes(routeDetailSearch.toLowerCase())
+                                                )
+                                                .map((r, i) => (
+                                                    <tr key={i}>
+                                                        <td style={{ padding: '0.75rem', fontSize: '0.875rem', fontWeight: 500 }}>{r.code}</td>
+                                                        <td style={{ padding: '0.75rem', fontSize: '0.875rem', color: '#64748b' }}>{r.name}</td>
+                                                    </tr>
+                                                ))
+                                            }
+                                            {selectedOfficerRoutes.routes.filter(r => r.code.toLowerCase().includes(routeDetailSearch.toLowerCase())).length === 0 && (
+                                                <tr>
+                                                    <td colSpan="2" style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                                        Rute tidak ditemukan
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                    <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                                        Tidak ada rute ditugaskan
+                                    </div>
                                 )}
                             </div>
-                            <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#64748b', fontWeight: 500 }}>
-                                {formData.kode_rute.length} dari {routes.length} rute dipilih
+
+                            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+                                <button
+                                    onClick={() => setIsRouteDetailModalOpen(false)}
+                                    className="btn btn-outline"
+                                    style={{ padding: '0.625rem 1.5rem', borderRadius: '8px', fontWeight: 600, minWidth: '100px' }}
+                                >
+                                    Tutup
+                                </button>
                             </div>
                         </div>
-
-                        {/* Route List */}
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.5rem' }}>
-                            {routes.length === 0 ? (
-                                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                                    Tidak ada rute tersedia untuk cabang ini
-                                </div>
-                            ) : (
-                                <div style={{ display: 'grid', gap: '0.5rem' }}>
-                                    {routes
-                                        .filter(r =>
-                                            r.kode_rute.toLowerCase().includes(routeSearch.toLowerCase()) ||
-                                            r.rute.toLowerCase().includes(routeSearch.toLowerCase())
-                                        )
-                                        .map(route => (
-                                            <label
-                                                key={route.kode_rute}
-                                                className={`route-checkbox-item ${formData.kode_rute.includes(route.kode_rute) ? 'selected' : ''}`}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.75rem',
-                                                    padding: '0.75rem',
-                                                    border: '1px solid #e2e8f0',
-                                                    borderRadius: '8px',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formData.kode_rute.includes(route.kode_rute)}
-                                                    onChange={() => {
-                                                        setFormData(prev => ({
-                                                            ...prev,
-                                                            kode_rute: prev.kode_rute.includes(route.kode_rute)
-                                                                ? prev.kode_rute.filter(r => r !== route.kode_rute)
-                                                                : [...prev.kode_rute, route.kode_rute]
-                                                        }));
-                                                    }}
-                                                    style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                                                />
-                                                <div style={{ flex: 1, pointerEvents: 'none' }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#0f172a' }}>{route.kode_rute}</div>
-                                                    <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>{route.rute}</div>
-                                                </div>
-                                            </label>
-                                        ))
-                                    }
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer */}
-                        <div style={{ padding: '1.5rem', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setIsRouteSelectOpen(false)} className="btn btn-primary" style={{
-                                padding: '0.625rem 2rem',
-                                borderRadius: '8px',
-                                fontWeight: 600,
-                                boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)'
-                            }}>
-                                Selesai
-                            </button>
-                        </div>
                     </div>
-                </div>
-            )}
-
-            {/* CSS for route checkbox items */}
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                .route-checkbox-item {
-                    background: white;
-                    transition: background-color 0.15s ease;
-                }
-                .route-checkbox-item:hover {
-                    background: #f8fafc;
-                }
-                .route-checkbox-item.selected {
-                    background: #f0f9ff;
-                }
-                .route-checkbox-item.selected:hover {
-                    background: #e0f2fe;
-                }
-            `}} />
-        </div>
+                )}
+            </div>
+        </>
     );
 }

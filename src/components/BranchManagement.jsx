@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Edit2, Trash2, Building2, CheckCircle, AlertCircle, Loader2, List, X, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Building2, CheckCircle, AlertCircle, Loader2, List, X, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Filter } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 const API_URL = './api/branches.php';
@@ -16,8 +14,11 @@ const ALL_COLUMNS = [
 
 const DEFAULT_COLUMNS = ['kode_cabang', 'cabang', 'alamat', 'telepon'];
 
-export default function BranchManagement() {
+export default function BranchManagement({ isReport = false, onReportClose }) {
     const [branches, setBranches] = useState([]);
+    const [scale, setScale] = useState(1);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const reportPaperRef = React.useRef(null);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,6 +32,23 @@ export default function BranchManagement() {
         alamat: '',
         telepon: ''
     });
+
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const getSortIcon = (key) => {
+        if (sortConfig.key !== key) return <ArrowUpDown size={14} style={{ opacity: 0.3 }} />;
+        if (sortConfig.direction === 'asc') return <ArrowUp size={14} />;
+        return <ArrowDown size={14} />;
+    };
 
     // Route Management State
     const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
@@ -254,55 +272,110 @@ export default function BranchManagement() {
     };
 
     const exportToPDF = () => {
-        try {
-            const doc = new jsPDF('p', 'mm', 'a4');
-            const now = new Date().toLocaleString('id-ID');
-
-            doc.setFontSize(18);
-            doc.setTextColor(14, 165, 233);
-            doc.text("Laporan Data Cabang PDAM", 14, 15);
-
-            doc.setFontSize(10);
-            doc.setTextColor(100);
-            doc.text(`Jumlah Total: ${filteredBranches.length} Cabang`, 14, 22);
-            doc.text(`Waktu Cetak: ${now}`, 196, 22, { align: 'right' });
-
-            const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
-            const tableColumn = ["No", ...visibleCols.map(c => c.label)];
-            const tableRows = filteredBranches.map((b, index) => [
-                index + 1,
-                ...visibleCols.map(col => b[col.id] || '-')
-            ]);
-
-            autoTable(doc, {
-                head: [tableColumn],
-                body: tableRows,
-                startY: 28,
-                theme: 'grid',
-                styles: { fontSize: 9, cellPadding: 2 },
-                headStyles: { fillColor: [241, 245, 249], textColor: [100, 116, 139], fontStyle: 'bold' },
-            });
-
-            doc.save(`data_cabang_${new Date().toISOString().split('T')[0]}.pdf`);
-        } catch (err) {
-            console.error('PDF Export Error:', err);
-            showNotification('Gagal mengekspor PDF', 'error');
-        }
+        const url = `./api/branch_report_pdf.php?t=${new Date().getTime()}&search=${encodeURIComponent(searchTerm)}`;
+        window.open(url, '_blank');
     };
 
     const handlePrint = () => {
         window.print();
     };
 
-    const filteredBranches = branches.filter(b =>
-        (b.cabang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.kode_cabang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.alamat || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.telepon || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const handleZoomIn = () => setScale(prev => Math.min(prev + 0.1, 2));
+    const handleZoomOut = () => setScale(prev => Math.max(prev - 0.1, 0.5));
+    const handleResetZoom = (value) => {
+        if (value === '100%') setScale(1);
+        else if (value === 'Lebar Halaman') {
+            const containerWidth = reportPaperRef.current?.parentElement?.clientWidth || 0;
+            const paperWidth = 297 * 3.7795275591; // mm to px
+            setScale(containerWidth / (paperWidth + 80));
+        } else if (value === 'Satu Halaman Penuh') {
+            const containerHeight = window.innerHeight - 200;
+            const paperHeight = 210 * 3.7795275591;
+            setScale(containerHeight / paperHeight);
+        }
+    };
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+            setIsFullscreen(true);
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+                setIsFullscreen(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }, []);
+
+    const filteredBranches = React.useMemo(() => {
+        let items = branches.filter(b =>
+            (b.cabang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (b.kode_cabang || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (b.alamat || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (b.telepon || '').toLowerCase().includes(searchTerm.toLowerCase())
+        );
+
+        if (sortConfig.key !== null) {
+            items.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                // Handle null/undefined
+                if (aValue === null || aValue === undefined) aValue = '';
+                if (bValue === null || bValue === undefined) bValue = '';
+
+                // Handle numbers
+                if (!isNaN(parseFloat(aValue)) && !isNaN(parseFloat(bValue)) && isFinite(aValue) && isFinite(bValue)) {
+                    aValue = parseFloat(aValue);
+                    bValue = parseFloat(bValue);
+                } else {
+                    aValue = String(aValue).toLowerCase();
+                    bValue = String(bValue).toLowerCase();
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return items;
+    }, [branches, searchTerm, sortConfig]);
 
     return (
-        <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+        <div style={{ animation: 'fadeIn 0.5s ease-out', display: 'flex', flexDirection: 'column', flex: 1 }}>
+            <style>
+                {`
+                    @keyframes fadeIn {
+                        from { opacity: 0; transform: translateY(10px); }
+                        to { opacity: 1; transform: translateY(0); }
+                    }
+                    @keyframes slideDown {
+                        from { transform: translate(-50%, -100%); }
+                        to { transform: translate(-50%, 0); }
+                    }
+
+                    @media print {
+                        .no-print { display: none !important; }
+                        .report-header-only { display: block !important; }
+                        .card { border: none !important; box-shadow: none !important; padding: 0 !important; }
+                        table { width: 100% !important; border-collapse: collapse !important; }
+                        th { background: #0ea5e9 !important; color: white !important; -webkit-print-color-adjust: exact; }
+                        td, th { border: 1px solid #e2e8f0 !important; padding: 8px !important; }
+                        @page { size: A4 landscape; margin: 1.5cm; }
+                    }
+                    `}
+            </style>
+
             {/* Notification Toast */}
             {notification && (
                 <div style={{
@@ -326,246 +399,450 @@ export default function BranchManagement() {
                 </div>
             )}
 
-            <header className="header" style={{ marginBottom: '2.5rem' }}>
-                <div>
-                    <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1.875rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                        <div style={{ background: 'rgba(14, 165, 233, 0.1)', padding: '0.625rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Building2 size={32} color="var(--primary)" />
+            {/* Report Viewer Toolbar */}
+            {isReport && (
+                <div className="report-toolbar no-print" style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '1.5rem',
+                    padding: '0.75rem 2rem',
+                    background: '#0f172a',
+                    borderBottom: '1px solid #1e293b',
+                    position: 'sticky',
+                    top: '0',
+                    zIndex: 1100,
+                    margin: '-1.5rem -1.5rem 2rem -1.5rem',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '1rem', borderRight: '1px solid #334155' }}>
+                        <button className="toolbar-btn" onClick={handlePrint} title="Print"><Printer size={18} /></button>
+                        <button className="toolbar-btn" onClick={exportToPDF} title="Export PDF"><FileText size={18} /></button>
+                        <button className="toolbar-btn" onClick={exportToExcel} title="Export Excel"><FileSpreadsheet size={18} /></button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 1rem', borderRight: '1px solid #334155' }}>
+                        <button className="toolbar-btn" title="Halaman Pertama"><ChevronLeft size={18} style={{ opacity: 0.5 }} /><ChevronLeft size={18} style={{ marginLeft: '-12px', opacity: 0.5 }} /></button>
+                        <button className="toolbar-btn" title="Halaman Sebelumnya"><ChevronLeft size={18} style={{ opacity: 0.5 }} /></button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                            <input type="text" value="1" readOnly style={{ width: '40px', textAlign: 'center', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px', height: '28px' }} />
+                            <span>/ 1</span>
                         </div>
-                        Data Cabang
-                    </h1>
-                    <p style={{ color: '#64748b', fontSize: '0.95rem', marginTop: '0.25rem' }}>Manajemen data kantor cabang dan jangkauan wilayah</p>
+                        <button className="toolbar-btn" title="Halaman Selanjutnya"><ChevronRight size={18} style={{ opacity: 0.5 }} /></button>
+                        <button className="toolbar-btn" title="Halaman Terakhir"><ChevronRight size={18} style={{ opacity: 0.5 }} /><ChevronRight size={18} style={{ marginLeft: '-12px', opacity: 0.5 }} /></button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 1rem', borderRight: '1px solid #334155' }}>
+                        <button className="toolbar-btn" title="Zoom Out" onClick={handleZoomOut}><ZoomOut size={18} /></button>
+                        <button className="toolbar-btn" title="Zoom In" onClick={handleZoomIn}><ZoomIn size={18} /></button>
+                        <select
+                            onChange={(e) => handleResetZoom(e.target.value)}
+                            value={scale === 1 ? '100%' : ''}
+                            style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', fontSize: '0.75rem', borderRadius: '4px', padding: '2px 8px', height: '28px' }}
+                        >
+                            <option value="">{Math.round(scale * 100)}%</option>
+                            <option value="100%">100%</option>
+                            <option value="Lebar Halaman">Lebar Halaman</option>
+                            <option value="Satu Halaman Penuh">Satu Halaman Penuh</option>
+                        </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <button className="toolbar-btn" title="Fullscreen" onClick={toggleFullscreen}>
+                            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                        </button>
+                        <button className="toolbar-btn" onClick={() => window.location.reload()} title="Refresh"><RefreshCw size={18} /></button>
+                        <button className="toolbar-btn" onClick={onReportClose} title="Tutup Viewer"><X size={18} /></button>
+                        <div style={{ position: 'relative' }}>
+                            <button className="toolbar-btn" onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)} title="Filter Kolom"><Filter size={18} /></button>
+                            {isColumnMenuOpen && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    right: 0,
+                                    marginTop: '0.5rem',
+                                    background: '#1e293b',
+                                    border: '1px solid #334155',
+                                    borderRadius: '8px',
+                                    padding: '0.75rem',
+                                    width: '200px',
+                                    zIndex: 1200,
+                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+                                }}>
+                                    <div style={{ paddingBottom: '0.5rem', borderBottom: '1px solid #334155', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                                        Tampilkan Kolom
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                        {ALL_COLUMNS.map(col => (
+                                            <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#e2e8f0', fontSize: '0.8125rem', cursor: 'pointer', padding: '4px', borderRadius: '4px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={visibleColumns.includes(col.id)}
+                                                    onChange={() => toggleColumn(col.id)}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                                {col.label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <style>
+                        {`
+                        .toolbar-btn {
+                            background: transparent;
+                            border: none;
+                            color: #94a3b8;
+                            padding: 6px;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            transition: all 0.2s;
+                        }
+                        .toolbar-btn:hover {
+                            background: #334155;
+                            color: white;
+                        }
+                        .toolbar-btn:active {
+                            background: #0ea5e9;
+                        }
+                        `}
+                    </style>
                 </div>
-                <div className="header-actions no-print" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn btn-outline" onClick={exportToCSV} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <Download size={18} />
-                        </button>
-                        <button className="btn btn-outline" onClick={exportToExcel} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <FileSpreadsheet size={18} />
-                        </button>
-                        <button className="btn btn-outline" onClick={exportToPDF} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <FileText size={18} />
-                        </button>
-                        <button className="btn btn-outline" onClick={handlePrint} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <Printer size={18} />
+            )}
+
+            {!isReport && (
+                <header className="header" style={{ marginBottom: '2.5rem' }}>
+                    <div className="no-print">
+                        <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1.875rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
+                            <div style={{ background: 'rgba(14, 165, 233, 0.1)', padding: '0.625rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Building2 size={32} color="var(--primary)" />
+                            </div>
+                            Data Cabang
+                        </h1>
+                        <p style={{ color: '#64748b', fontSize: '0.95rem', marginTop: '0.25rem' }}>Manajemen data kantor cabang dan jangkauan wilayah</p>
+                    </div>
+                    <div className="header-actions no-print" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button className="btn btn-outline" onClick={exportToCSV} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <Download size={18} />
+                            </button>
+                            <button className="btn btn-outline" onClick={exportToExcel} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <FileSpreadsheet size={18} />
+                            </button>
+                            <button className="btn btn-outline" onClick={exportToPDF} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <FileText size={18} />
+                            </button>
+                            <button className="btn btn-outline" onClick={handlePrint} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                                <Printer size={18} />
+                            </button>
+                        </div>
+                        <button className="btn btn-primary" onClick={() => handleOpenModal()} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.625rem 1.25rem',
+                            borderRadius: '8px',
+                            fontSize: '0.95rem',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)'
+                        }}>
+                            <Plus size={20} />
+                            <span className="hide-mobile">Tambah Cabang</span>
                         </button>
                     </div>
-                    <button className="btn btn-primary" onClick={() => handleOpenModal()} style={{
+                </header>
+            )}
+
+            <div style={{
+                background: isReport ? '#334155' : 'transparent',
+                margin: isReport ? '-1.5rem' : '0',
+                padding: isReport ? '3rem 1.5rem' : '0',
+                minHeight: isReport ? 'calc(100vh - 100px)' : '0',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
+                justifyContent: isReport ? 'center' : 'flex-start',
+                overflowY: isReport ? 'auto' : 'hidden'
+            }}>
+                <div
+                    ref={reportPaperRef}
+                    className={isReport ? "report-paper" : "card"}
+                    style={{
+                        padding: isReport ? '2.48rem' : '1.5rem', // A4 proportionate padding
+                        background: 'white',
+                        borderRadius: isReport ? '2px' : '16px',
+                        border: isReport ? 'none' : '1px solid var(--border)',
+                        width: isReport ? '297mm' : '100%',
+                        minHeight: isReport ? '210mm' : 'auto',
+                        boxShadow: isReport ? '0 25px 50px -12px rgba(0, 0, 0, 0.5)' : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        position: 'relative',
+                        transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                        transform: isReport ? `scale(${scale})` : 'none',
+                        transformOrigin: 'top center',
+                        height: isReport ? 'auto' : '100%',
+                        flex: 1,
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.625rem 1.25rem',
-                        borderRadius: '8px',
-                        fontSize: '0.95rem',
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap',
-                        boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)'
+                        flexDirection: 'column',
+                        overflow: 'hidden'
                     }}>
-                        <Plus size={20} />
-                        <span className="hide-mobile">Tambah Cabang</span>
-                    </button>
-                </div>
-            </header>
-
-            <div className="card" style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', alignItems: 'center' }}>
-                    {/* Column Toggle */}
-                    <div style={{ position: 'relative' }} ref={columnMenuRef}>
-                        <button
-                            className="btn btn-outline"
-                            onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                            style={{
-                                height: '42px',
-                                padding: '0 1.25rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.625rem',
-                                borderRadius: '8px',
-                                fontWeight: 600,
-                                background: isColumnMenuOpen ? '#f1f5f9' : '#f8fafc',
-                                border: `1px solid ${isColumnMenuOpen ? 'var(--primary)' : 'var(--border)'}`,
-                                color: isColumnMenuOpen ? 'var(--primary)' : 'var(--text)',
-                            }}
-                        >
-                            <SlidersHorizontal size={18} />
-                            <span>Pilih Kolom</span>
-                        </button>
-
-                        {isColumnMenuOpen && (
-                            <div style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 8px)',
-                                left: 0,
-                                zIndex: 1000,
-                                background: 'white',
-                                border: '1px solid var(--border)',
-                                borderRadius: '12px',
-                                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-                                padding: '1.25rem',
-                                minWidth: '220px',
-                                animation: 'fadeIn 0.2s ease-out'
-                            }}>
-                                <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', color: 'var(--text)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem' }}>
-                                    {ALL_COLUMNS.map(col => (
-                                        <label key={col.id} style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.75rem',
-                                            cursor: 'pointer',
-                                            padding: '0.5rem 0.75rem',
-                                            fontSize: '0.875rem',
-                                            borderRadius: '6px',
-                                            transition: 'background 0.2s'
-                                        }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
-                                                checked={visibleColumns.includes(col.id)}
-                                                onChange={() => {
-                                                    setVisibleColumns(prev =>
-                                                        prev.includes(col.id)
-                                                            ? prev.filter(id => id !== col.id)
-                                                            : [...prev, col.id]
-                                                    );
-                                                }}
-                                            />
-                                            <span style={{ color: visibleColumns.includes(col.id) ? 'var(--text)' : 'var(--text-light)', fontWeight: visibleColumns.includes(col.id) ? 500 : 400 }}>{col.label}</span>
-                                        </label>
-                                    ))}
+                    {isReport && (
+                        <div className="report-content-header" style={{ marginBottom: '3rem', borderBottom: '2px solid #334155', paddingBottom: '2rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '3rem', marginBottom: '2rem' }}>
+                                <div style={{ background: '#0ea5e9', padding: '1rem', borderRadius: '12px' }}>
+                                    <Building2 size={48} color="white" />
                                 </div>
-                                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-                                    <button
-                                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
-                                        onClick={() => setVisibleColumns(ALL_COLUMNS.map(c => c.id))}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(14, 165, 233, 0.05)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                                    >Pilih Semua</button>
-                                    <button
-                                        style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
-                                        onClick={() => setVisibleColumns(DEFAULT_COLUMNS)}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                                    >Reset Default</button>
+                                <div style={{ flex: 1 }}>
+                                    <h2 style={{ margin: 0, fontSize: '2.25rem', color: '#0ea5e9', fontWeight: 900, letterSpacing: '-0.025em' }}>PDAM SMART Indramayu</h2>
+                                    <p style={{ margin: '0.25rem 0', color: '#475569', fontSize: '1.125rem', fontWeight: 600 }}>Sistem Informasi Manajemen Pelanggan Terintegrasi</p>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>Jl. Unit Pelayanan No. 45, Kab. Indramayu | Telp: (0234) 123456</p>
+                                </div>
+                                <div style={{ textAlign: 'right', borderLeft: '1px solid #e2e8f0', paddingLeft: '2rem' }}>
+                                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Kode Dokumen</p>
+                                    <p style={{ margin: 0, fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>RPT-BRC-001</p>
                                 </div>
                             </div>
-                        )}
-                    </div>
+                            <div style={{ textAlign: 'center', position: 'relative' }}>
+                                <div style={{ height: '4px', background: '#0ea5e9', width: '60px', margin: '0 auto 1.5rem' }}></div>
+                                <h1 style={{ margin: 0, fontSize: '1.875rem', fontWeight: 800, color: '#0f172a', letterSpacing: '0.05em' }}>LAPORAN DATA CABANG</h1>
+                                <p style={{ margin: '0.75rem 0', color: '#64748b', fontWeight: 600, fontSize: '1rem' }}>
+                                    Dicetak pada: <span style={{ color: '#0ea5e9' }}>{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                    {!isReport && (
+                        <div className="no-print" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', alignItems: 'center' }}>
+                            {/* Column Toggle */}
+                            <div style={{ position: 'relative' }} ref={columnMenuRef}>
+                                <button
+                                    className="btn btn-outline"
+                                    onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
+                                    style={{
+                                        height: '42px',
+                                        padding: '0 1.25rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.625rem',
+                                        borderRadius: '8px',
+                                        fontWeight: 600,
+                                        background: isColumnMenuOpen ? '#f1f5f9' : '#f8fafc',
+                                        border: `1px solid ${isColumnMenuOpen ? 'var(--primary)' : 'var(--border)'}`,
+                                        color: isColumnMenuOpen ? 'var(--primary)' : 'var(--text)',
+                                    }}
+                                >
+                                    <SlidersHorizontal size={18} />
+                                    <span>Pilih Kolom</span>
+                                </button>
 
-                    <div style={{ position: 'relative', flex: '0 1 350px' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
-                        <input
-                            style={{
-                                paddingLeft: '2.5rem',
-                                paddingRight: searchTerm ? '2.5rem' : '0.625rem',
-                                height: '42px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--border)',
-                                fontSize: '0.9rem',
-                                width: '100%',
-                                background: '#f8fafc'
-                            }}
-                            placeholder="Cari cabang, alamat atau telepon..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                </div>
+                                {isColumnMenuOpen && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: 'calc(100% + 8px)',
+                                        left: 0,
+                                        zIndex: 1000,
+                                        background: 'white',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: '12px',
+                                        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+                                        padding: '1.25rem',
+                                        minWidth: '220px',
+                                        animation: 'fadeIn 0.2s ease-out'
+                                    }}>
+                                        <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', color: 'var(--text)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem' }}>
+                                            {ALL_COLUMNS.map(col => (
+                                                <label key={col.id} style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.75rem',
+                                                    cursor: 'pointer',
+                                                    padding: '0.5rem 0.75rem',
+                                                    fontSize: '0.875rem',
+                                                    borderRadius: '6px',
+                                                    transition: 'background 0.2s'
+                                                }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                                                        checked={visibleColumns.includes(col.id)}
+                                                        onChange={() => {
+                                                            setVisibleColumns(prev =>
+                                                                prev.includes(col.id)
+                                                                    ? prev.filter(id => id !== col.id)
+                                                                    : [...prev, col.id]
+                                                            );
+                                                        }}
+                                                    />
+                                                    <span style={{ color: visibleColumns.includes(col.id) ? 'var(--text)' : 'var(--text-light)', fontWeight: visibleColumns.includes(col.id) ? 500 : 400 }}>{col.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+                                            <button
+                                                style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
+                                                onClick={() => setVisibleColumns(ALL_COLUMNS.map(c => c.id))}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(14, 165, 233, 0.05)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                                            >Pilih Semua</button>
+                                            <button
+                                                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
+                                                onClick={() => setVisibleColumns(DEFAULT_COLUMNS)}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                                            >Reset Default</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
 
-                {loading ? (
-                    <div style={{ padding: '8rem 0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                        <Loader2 className="animate-spin" size={40} color="var(--primary)" />
-                        <p style={{ color: 'var(--text-light)', fontWeight: 500 }}>Memuat data cabang...</p>
-                    </div>
-                ) : (
-                    <div className="table-container" style={{ margin: 0 }}>
-                        <table style={{ width: '100%', minWidth: '600px' }}>
-                            <thead>
-                                <tr>
-                                    <th style={{ width: '60px', padding: '0.625rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>NO</th>
-                                    {visibleColumns.includes('kode_cabang') && <th style={{ width: '130px', padding: '0.625rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Kode Cabang</th>}
-                                    {visibleColumns.includes('cabang') && <th style={{ padding: '0.625rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nama Cabang</th>}
-                                    {visibleColumns.includes('alamat') && <th style={{ padding: '0.625rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Alamat</th>}
-                                    {visibleColumns.includes('telepon') && <th style={{ width: '160px', padding: '0.625rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Telepon</th>}
-                                    <th style={{ width: '100px', padding: '0.625rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredBranches.length > 0 ? filteredBranches.map((branch, index) => (
-                                    <tr key={branch.id} style={{ transition: 'background-color 0.2s' }}>
-                                        <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', fontWeight: 500, color: '#64748b', fontSize: '0.875rem' }}>{index + 1}</td>
+                            <div style={{ position: 'relative', flex: '0 1 350px' }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+                                <input
+                                    style={{
+                                        paddingLeft: '2.5rem',
+                                        paddingRight: searchTerm ? '2.5rem' : '0.625rem',
+                                        height: '42px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--border)',
+                                        fontSize: '0.9rem',
+                                        width: '100%',
+                                        background: '#f8fafc'
+                                    }}
+                                    placeholder="Cari cabang, alamat atau telepon..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <div style={{ padding: '8rem 0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                            <Loader2 className="animate-spin" size={40} color="var(--primary)" />
+                            <p style={{ color: 'var(--text-light)', fontWeight: 500 }}>Memuat data cabang...</p>
+                        </div>
+                    ) : (
+                        <div className="table-container" style={{ margin: 0, border: isReport ? '1px solid #e2e8f0' : 'none', flex: 1, overflow: 'auto', minHeight: 0 }}>
+                            <table style={{ width: '100%', minWidth: isReport ? '100%' : '600px', borderCollapse: 'collapse' }}>
+                                <thead>
+                                    <tr style={{ background: isReport ? '#f8fafc' : 'transparent' }}>
+                                        <th style={{ width: '60px', padding: '1rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: isReport ? '2px solid #e2e8f0' : 'none', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>NO</th>
                                         {visibleColumns.includes('kode_cabang') && (
-                                            <td style={{ padding: '0.625rem 0.75rem', fontWeight: 600, color: 'var(--text)', textAlign: 'center' }}>
-                                                <span style={{ background: '#f1f5f9', color: '#1e293b', padding: '0.2rem 0.625rem', borderRadius: '4px', fontSize: '0.8125rem', border: '1px solid #e2e8f0' }}>
-                                                    {branch.kode_cabang}
-                                                </span>
-                                            </td>
+                                            <th onClick={isReport ? null : () => handleSort('kode_cabang')} style={{ width: '130px', padding: '1rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: isReport ? 'default' : 'pointer', userSelect: 'none', borderBottom: isReport ? '2px solid #e2e8f0' : 'none', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    Kode Cabang {!isReport && getSortIcon('kode_cabang')}
+                                                </div>
+                                            </th>
                                         )}
                                         {visibleColumns.includes('cabang') && (
-                                            <td style={{ padding: '0.625rem 0.75rem', color: 'var(--text)', fontSize: '0.9rem', fontWeight: 500 }}>{branch.cabang}</td>
+                                            <th onClick={isReport ? null : () => handleSort('cabang')} style={{ padding: '1rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: isReport ? 'default' : 'pointer', userSelect: 'none', borderBottom: isReport ? '2px solid #e2e8f0' : 'none', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    Nama Cabang {!isReport && getSortIcon('cabang')}
+                                                </div>
+                                            </th>
                                         )}
                                         {visibleColumns.includes('alamat') && (
-                                            <td style={{ padding: '0.625rem 0.75rem', color: '#64748b', fontSize: '0.875rem' }}>
-                                                <div style={{ maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={branch.alamat}>
-                                                    {branch.alamat || '-'}
+                                            <th onClick={isReport ? null : () => handleSort('alamat')} style={{ padding: '1rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: isReport ? 'default' : 'pointer', userSelect: 'none', borderBottom: isReport ? '2px solid #e2e8f0' : 'none', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    Alamat {!isReport && getSortIcon('alamat')}
                                                 </div>
-                                            </td>
+                                            </th>
                                         )}
                                         {visibleColumns.includes('telepon') && (
-                                            <td style={{ padding: '0.625rem 0.75rem', color: '#64748b', fontSize: '0.875rem' }}>{branch.telepon || '-'}</td>
+                                            <th onClick={isReport ? null : () => handleSort('telepon')} style={{ width: '160px', padding: '1rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: isReport ? 'default' : 'pointer', userSelect: 'none', borderBottom: isReport ? '2px solid #e2e8f0' : 'none', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    Telepon {!isReport && getSortIcon('telepon')}
+                                                </div>
+                                            </th>
                                         )}
-                                        <td style={{ padding: '0.625rem 0.75rem' }}>
-                                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                                                <button
-                                                    className="btn btn-outline"
-                                                    style={{
-                                                        padding: '0.25rem',
-                                                        borderRadius: '6px',
-                                                        width: '28px',
-                                                        height: '28px'
-                                                    }}
-                                                    onClick={() => handleOpenModal(branch)}
-                                                    title="Edit Cabang"
-                                                >
-                                                    <Edit2 size={14} />
-                                                </button>
-                                                <button
-                                                    className="btn btn-outline"
-                                                    style={{
-                                                        padding: '0.25rem',
-                                                        color: '#ef4444',
-                                                        borderRadius: '6px',
-                                                        width: '28px',
-                                                        height: '28px'
-                                                    }}
-                                                    onClick={() => handleDeleteClick(branch.id)}
-                                                    title="Hapus Cabang"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
+                                        {!isReport && <th style={{ width: '100px', padding: '0.625rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Aksi</th>}
                                     </tr>
-                                )) : (
-                                    <tr>
-                                        <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', padding: '5rem 0' }}>
-                                            <div style={{ opacity: 0.5, marginBottom: '1rem' }}>
-                                                <Building2 size={64} style={{ margin: '0 auto' }} />
-                                            </div>
-                                            <p style={{ color: 'var(--text-light)', fontSize: '1rem' }}>
-                                                {searchTerm ? `Tidak ditemukan hasil untuk "${searchTerm}"` : 'Belum ada data cabang.'}
-                                            </p>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                </thead>
+                                <tbody>
+                                    {filteredBranches.length > 0 ? filteredBranches.map((branch, index) => (
+                                        <tr key={branch.id} style={{ transition: 'background-color 0.2s', borderBottom: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                            <td style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 500, color: '#64748b', fontSize: '0.875rem', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{index + 1}</td>
+                                            {visibleColumns.includes('kode_cabang') && (
+                                                <td style={{ padding: '0.75rem', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                    <span style={isReport ? {} : { background: '#f1f5f9', color: '#1e293b', padding: '0.2rem 0.625rem', borderRadius: '4px', fontSize: '0.8125rem', border: '1px solid #e2e8f0' }}>
+                                                        {branch.kode_cabang}
+                                                    </span>
+                                                </td>
+                                            )}
+                                            {visibleColumns.includes('cabang') && (
+                                                <td style={{ padding: '0.75rem', color: 'var(--text)', fontSize: '0.9rem', fontWeight: 500, borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{branch.cabang}</td>
+                                            )}
+                                            {visibleColumns.includes('alamat') && (
+                                                <td style={{ padding: '0.75rem', color: '#64748b', fontSize: '0.875rem', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
+                                                    <div style={isReport ? {} : { maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={branch.alamat}>
+                                                        {branch.alamat || '-'}
+                                                    </div>
+                                                </td>
+                                            )}
+                                            {visibleColumns.includes('telepon') && (
+                                                <td style={{ padding: '0.75rem', color: '#64748b', fontSize: '0.875rem', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>{branch.telepon || '-'}</td>
+                                            )}
+                                            {!isReport && (
+                                                <td style={{ padding: '0.625rem 0.75rem' }}>
+                                                    <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                                                        <button
+                                                            className="btn btn-outline"
+                                                            style={{
+                                                                padding: '0.25rem',
+                                                                borderRadius: '6px',
+                                                                width: '28px',
+                                                                height: '28px'
+                                                            }}
+                                                            onClick={() => handleOpenModal(branch)}
+                                                            title="Edit Cabang"
+                                                        >
+                                                            <Edit2 size={14} />
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-outline"
+                                                            style={{
+                                                                padding: '0.25rem',
+                                                                color: '#ef4444',
+                                                                borderRadius: '6px',
+                                                                width: '28px',
+                                                                height: '28px'
+                                                            }}
+                                                            onClick={() => handleDeleteClick(branch.id)}
+                                                            title="Hapus Cabang"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            )}
+                                        </tr>
+                                    )) : (
+                                        <tr>
+                                            <td colSpan={visibleColumns.length + (isReport ? 1 : 2)} style={{ textAlign: 'center', padding: '5rem 0' }}>
+                                                <div style={{ opacity: 0.5, marginBottom: '1rem' }}>
+                                                    <Building2 size={64} style={{ margin: '0 auto' }} />
+                                                </div>
+                                                <p style={{ color: 'var(--text-light)', fontSize: '1rem' }}>
+                                                    {searchTerm ? `Tidak ditemukan hasil untuk "${searchTerm}"` : 'Belum ada data cabang.'}
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Modal Add/Edit */}

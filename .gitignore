@@ -30,3 +30,7 @@ db_backups/
 .env.local
 node_modules/
 dist/
+
+# User uploads and build assets
+uploads/
+assets/

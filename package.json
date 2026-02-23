@@ -13,10 +13,13 @@
     "date-fns": "^4.1.0",
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.7",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",
     "react-datepicker": "^9.1.0",
     "react-dom": "^19.2.0",
+    "react-leaflet": "^5.0.0",
+    "react-viewer": "^3.2.2",
     "sweetalert2": "^11.26.17",
     "xlsx": "^0.18.5"
   },

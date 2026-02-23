@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Droplets, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileSpreadsheet, FileText, Printer, BarChart2, SlidersHorizontal, Eye, RefreshCw, Edit2, ChevronDown, X, Calendar, Camera, ZoomIn, Trash2, HardDrive, MapPin, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import SimpleImageViewer from './common/SimpleImageViewer';
+import { Search, Droplets, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileSpreadsheet, FileText, Printer, BarChart2, SlidersHorizontal, Eye, RefreshCw, Edit2, ChevronDown, X, Calendar, Camera, ZoomIn, Trash2, HardDrive, MapPin, CheckCircle2, AlertCircle, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import CustomDatePicker from './common/CustomDatePicker';
 import { subMonths, startOfMonth, format } from 'date-fns';
 import { jsPDF } from 'jspdf';
@@ -56,16 +57,29 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [aiDebugImage, setAiDebugImage] = useState(null);
     const [previewImage, setPreviewImage] = useState(null);
-    const [imageZoom, setImageZoom] = useState(1);
-    const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const previewModalRef = useRef(null);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [searchCategory, setSearchCategory] = useState('nama');
     const [filterDate, setFilterDate] = useState(new Date());
+
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const getSortIcon = (key) => {
+        if (sortConfig.key !== key) return <ArrowUpDown size={14} style={{ opacity: 0.3 }} />;
+        if (sortConfig.direction === 'asc') return <ArrowUp size={14} />;
+        return <ArrowDown size={14} />;
+    };
 
     // Edit Modal State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -100,15 +114,32 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
     const fetchData = async () => {
         try {
             setLoading(true);
+
+            // Format date for API (YYYY-MM-DD)
+            const dateStr = filterDate ? new Date(filterDate.getTime() - (filterDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 10) : '';
+
+            // Fetch recordings with date filter and high limit to get all data for analysis
+            const recUrl = `${API_URL}?limit=1000&date=${dateStr}`;
+
             const [recRes, custRes] = await Promise.all([
-                fetch(API_URL),
+                fetch(recUrl),
                 fetch(CUSTOMER_API)
             ]);
+
             const [recData, custData] = await Promise.all([
                 recRes.json(),
                 custRes.json()
             ]);
-            setRecordings(Array.isArray(recData) ? recData : []);
+
+            // Handle response format (success wrapper vs direct array)
+            if (recData.status === 'success') {
+                setRecordings(recData.data);
+            } else if (Array.isArray(recData)) {
+                setRecordings(recData);
+            } else {
+                setRecordings([]);
+            }
+
             setCustomers(Array.isArray(custData) ? custData : []);
         } catch (err) {
             console.error('Failed to fetch data:', err);
@@ -160,20 +191,16 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
         fetchStatusKondisi();
         fetchStatusAnalisa();
         fetchOfficers();
-    }, []);
+    }, [filterDate]);
 
     const fetchOfficers = async () => {
         try {
-            // Mock data if API is not available/working for this demo
-            // In pages, we might fetch from './api/officers.php'
-            const mockOfficers = [
-                { id: 1, nama: 'Warsono', status_aktif: 'Aktif', cabang: 'Utama' },
-                { id: 2, nama: 'Budi Santoso', status_aktif: 'Aktif', cabang: 'Utama' },
-                { id: 3, nama: 'Ahmad Yani', status_aktif: 'Aktif', cabang: 'Barat' }
-            ];
-            setOfficers(mockOfficers);
+            const res = await fetch('./api/officers.php');
+            const data = await res.json();
+            setOfficers(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Error fetching officers:', error);
+            setOfficers([]);
         }
     };
 
@@ -356,41 +383,83 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
         return '';
     };
 
-    const filteredData = recordings.filter(rec => {
-        // 1. OCR Status Filter (Top Priority)
-        // If ocrStatusFilter is active, show matching records
-        if (ocrStatusFilter) {
-            const currentStatus = getDerivedOcrStatus(rec);
-            const normalizedCurrent = String(currentStatus).toUpperCase().trim();
+    const filteredData = React.useMemo(() => {
+        let items = recordings.filter(rec => {
+            // 1. OCR Status Filter (Top Priority)
+            // If ocrStatusFilter is active, show matching records
+            if (ocrStatusFilter) {
+                const currentStatus = getDerivedOcrStatus(rec);
+                const normalizedCurrent = String(currentStatus).toUpperCase().trim();
 
-            if (ocrStatusFilter === 'REVIEW') {
-                // Review mode shows both YELLOW (needs human review) and RED (mismatch)
-                if (normalizedCurrent !== 'YELLOW' && normalizedCurrent !== 'RED') return false;
-            } else {
-                const targetStatus = String(ocrStatusFilter).toUpperCase().trim();
-                if (normalizedCurrent !== targetStatus) return false;
+                if (ocrStatusFilter === 'REVIEW') {
+                    // Review mode shows both YELLOW (needs human review) and RED (mismatch)
+                    if (normalizedCurrent !== 'YELLOW' && normalizedCurrent !== 'RED') return false;
+                } else {
+                    const targetStatus = String(ocrStatusFilter).toUpperCase().trim();
+                    if (normalizedCurrent !== targetStatus) return false;
+                }
             }
+
+            // 2. Date Filter - Now handled by API, but we keep a check to be safe or if data lingers
+            // const recDate = rec.update_date?.slice(0, 10);
+            // const targetDate = filterDate ? new Date(filterDate.getTime() - (filterDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 10) : null;
+            // if (targetDate && recDate !== targetDate) return false;
+
+            // 3. Search Term Filter
+            const term = searchTerm.toLowerCase().trim();
+            if (!term) return true;
+
+            const customer = getCustomerInfo(rec.id_pelanggan);
+            const searchableText = [
+                rec.nama,
+                rec.id_sambungan,
+                rec.id_meter,
+                customer.id_tag
+            ].filter(Boolean).map(s => String(s).toLowerCase()).join(' ');
+
+            return searchableText.includes(term);
+        });
+
+        if (sortConfig.key !== null) {
+            items.sort((a, b) => {
+                let aValue, bValue;
+
+                if (sortConfig.key === 'PEMAKAIAN (m³)') {
+                    aValue = calculateUsage(a);
+                    bValue = calculateUsage(b);
+                } else if (sortConfig.key === 'hasil_analisa') {
+                    aValue = getAnalysisStatus(calculateUsage(a));
+                    bValue = getAnalysisStatus(calculateUsage(b));
+                } else if (sortConfig.key === 'ai_ocr_status') {
+                    aValue = getDerivedOcrStatus(a);
+                    bValue = getDerivedOcrStatus(b);
+                } else {
+                    aValue = a[sortConfig.key];
+                    bValue = b[sortConfig.key];
+                }
+
+                if (aValue === null || aValue === undefined) aValue = '';
+                if (bValue === null || bValue === undefined) bValue = '';
+
+                if (!isNaN(parseFloat(aValue)) && !isNaN(parseFloat(bValue)) && isFinite(aValue) && isFinite(bValue)) {
+                    aValue = parseFloat(aValue);
+                    bValue = parseFloat(bValue);
+                } else {
+                    aValue = String(aValue).toLowerCase();
+                    bValue = String(bValue).toLowerCase();
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
         }
-
-        // 2. Date Filter (Daily) - Matches RecordingManagement logic
-        const recDate = rec.update_date?.slice(0, 10);
-        const targetDate = filterDate ? new Date(filterDate.getTime() - (filterDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 10) : null;
-        if (targetDate && recDate !== targetDate) return false;
-
-        // 3. Search Term Filter
-        const term = searchTerm.toLowerCase().trim();
-        if (!term) return true;
-
-        const customer = getCustomerInfo(rec.id_pelanggan);
-        const searchableText = [
-            rec.nama,
-            rec.id_sambungan,
-            rec.id_meter,
-            customer.id_tag
-        ].filter(Boolean).map(s => String(s).toLowerCase()).join(' ');
-
-        return searchableText.includes(term);
-    });
+        return items;
+    }, [recordings, searchTerm, filterDate, ocrStatusFilter, customers, sortConfig]);
 
     const getPageNumbers = () => {
         let pages = [];
@@ -439,7 +508,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                 if (col.id === 'PEMAKAIAN (m³)') return usage;
                 if (col.id === 'hasil_analisa') return getAnalysisStatus(usage);
                 if (col.id === 'status_laporan') return statusKondisiOptions.find(s => s.kode_kondisi === rec.status_laporan)?.status_kondisi || rec.status_laporan || '-';
-                if (col.id === 'tgl_verifikasi') return rec.tgl_verifikasi || '-';
+                if (col.id === 'tgl_verifikasi') return rec.tgl_verifikasi ? format(new Date(rec.tgl_verifikasi), 'dd/MM/yyyy HH:mm:ss') : '-';
                 return '';
             });
         });
@@ -630,7 +699,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
 
 
     return (
-        <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+        <div style={{ animation: 'fadeIn 0.5s ease-out', display: 'flex', flexDirection: 'column', flex: 1 }}>
             <style>
                 {`
                     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -793,7 +862,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
             </header>
 
 
-            <div className="card">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
                 <div className="no-print" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ position: 'relative' }} ref={columnMenuRef}>
                         <button className="btn btn-outline" onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
@@ -865,27 +934,103 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                     </div>
                 </div>
 
-                <div className="table-container" style={{ maxHeight: 'calc(100vh - 350px)', overflowY: 'auto', margin: '1rem -1rem 0', width: 'calc(100% + 2rem)' }}>
+                <div className="table-container" style={{ flex: 1, overflow: 'auto', minHeight: 0, margin: '1rem -1rem 0', width: 'calc(100% + 2rem)' }}>
                     <table className="customer-table" style={{ width: '100%' }}>
                         <thead>
                             <tr>
                                 <th className="sticky-col-left" style={{ width: '80px', textAlign: 'center' }}>NO</th>
                                 {visibleColumns.includes('id_sambungan') && (
-                                    <th style={{ width: '180px', minWidth: '180px', textAlign: 'left' }}>NO. SAMBUNGAN</th>
+                                    <th onClick={() => handleSort('id_sambungan')} style={{ width: '180px', minWidth: '180px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            NO. SAMBUNGAN {getSortIcon('id_sambungan')}
+                                        </div>
+                                    </th>
                                 )}
-                                {visibleColumns.includes('id_meter') && <th style={{ width: '150px', minWidth: '150px', textAlign: 'left' }}>ID METER</th>}
-                                {visibleColumns.includes('id_tag') && <th style={{ width: '150px', minWidth: '150px', textAlign: 'left' }}>ID TAG</th>}
-                                {visibleColumns.includes('nama') && <th style={{ width: '250px', minWidth: '250px', textAlign: 'left' }}>NAMA</th>}
-                                {visibleColumns.includes('alamat') && <th style={{ width: '350px', minWidth: '350px', textAlign: 'left' }}>ALAMAT</th>}
-                                {visibleColumns.includes('kode_tarif') && <th style={{ width: '100px', minWidth: '100px', textAlign: 'center' }}>TARIF</th>}
-                                {visibleColumns.includes('stan_akhir') && <th style={{ width: '130px', minWidth: '130px', textAlign: 'center' }}>STAND AKHIR</th>}
-                                {visibleColumns.includes('stan_awal') && <th style={{ width: '130px', minWidth: '130px', textAlign: 'center' }}>STAN AWAL</th>}
+                                {visibleColumns.includes('id_meter') && (
+                                    <th onClick={() => handleSort('id_meter')} style={{ width: '150px', minWidth: '150px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            ID METER {getSortIcon('id_meter')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('id_tag') && (
+                                    <th onClick={() => handleSort('id_tag')} style={{ width: '150px', minWidth: '150px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            ID TAG {getSortIcon('id_tag')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('nama') && (
+                                    <th onClick={() => handleSort('nama')} style={{ width: '250px', minWidth: '250px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            NAMA {getSortIcon('nama')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('alamat') && (
+                                    <th onClick={() => handleSort('alamat')} style={{ width: '350px', minWidth: '350px', textAlign: 'left', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            ALAMAT {getSortIcon('alamat')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('kode_tarif') && (
+                                    <th onClick={() => handleSort('kode_tarif')} style={{ width: '100px', minWidth: '100px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            TARIF {getSortIcon('kode_tarif')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('stan_akhir') && (
+                                    <th onClick={() => handleSort('stan_akhir')} style={{ width: '130px', minWidth: '130px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            STAND AKHIR {getSortIcon('stan_akhir')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('stan_awal') && (
+                                    <th onClick={() => handleSort('stan_awal')} style={{ width: '130px', minWidth: '130px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            STAN AWAL {getSortIcon('stan_awal')}
+                                        </div>
+                                    </th>
+                                )}
                                 {visibleColumns.includes('koordinat') && <th style={{ width: '200px', minWidth: '200px', textAlign: 'left' }}>KOORDINAT</th>}
-                                {visibleColumns.includes('PEMAKAIAN (m³)') && <th style={{ width: '160px', minWidth: '160px', textAlign: 'center' }}>PEMAKAIAN (m³)</th>}
-                                {visibleColumns.includes('ai_ocr_status') && <th style={{ width: '180px', minWidth: '180px', textAlign: 'center' }}>STATUS OCR</th>}
-                                {visibleColumns.includes('hasil_analisa') && <th style={{ width: '180px', minWidth: '180px', textAlign: 'center' }}>HASIL ANALISA</th>}
-                                {visibleColumns.includes('status_laporan') && <th style={{ width: '180px', minWidth: '180px', textAlign: 'center' }}>KONDISI METER</th>}
-                                {visibleColumns.includes('tgl_verifikasi') && <th style={{ width: '180px', minWidth: '180px', textAlign: 'center' }}>TGL VERIFIKASI</th>}
+                                {visibleColumns.includes('PEMAKAIAN (m³)') && (
+                                    <th onClick={() => handleSort('PEMAKAIAN (m³)')} style={{ width: '160px', minWidth: '160px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            PEMAKAIAN (m³) {getSortIcon('PEMAKAIAN (m³)')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('ai_ocr_status') && (
+                                    <th onClick={() => handleSort('ai_ocr_status')} style={{ width: '180px', minWidth: '180px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            STATUS OCR {getSortIcon('ai_ocr_status')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('hasil_analisa') && (
+                                    <th onClick={() => handleSort('hasil_analisa')} style={{ width: '180px', minWidth: '180px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            HASIL ANALISA {getSortIcon('hasil_analisa')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('status_laporan') && (
+                                    <th onClick={() => handleSort('status_laporan')} style={{ width: '180px', minWidth: '180px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            KONDISI METER {getSortIcon('status_laporan')}
+                                        </div>
+                                    </th>
+                                )}
+                                {visibleColumns.includes('tgl_verifikasi') && (
+                                    <th onClick={() => handleSort('tgl_verifikasi')} style={{ width: '180px', minWidth: '180px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            TGL VERIFIKASI {getSortIcon('tgl_verifikasi')}
+                                        </div>
+                                    </th>
+                                )}
                                 <th className="no-print sticky-col-right" style={{ width: '120px', minWidth: '120px', textAlign: 'center' }}>AKSI</th>
                             </tr>
                         </thead>
@@ -1015,7 +1160,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                                             )}
                                             {visibleColumns.includes('tgl_verifikasi') && (
                                                 <td style={{ textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
-                                                    {rec.tgl_verifikasi || '-'}
+                                                    {rec.tgl_verifikasi ? format(new Date(rec.tgl_verifikasi), 'dd/MM/yyyy HH:mm:ss') : '-'}
                                                 </td>
                                             )}
                                             <td className="no-print sticky-col-right" style={{ textAlign: 'center' }}>
@@ -1375,142 +1520,11 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
             )}
 
             {/* Image Preview Modal with Zoom */}
-            {previewImage && (
-                <div
-                    ref={previewModalRef}
-                    className="modal-overlay"
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-                        zIndex: 2000,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: isDragging ? 'grabbing' : (imageZoom > 1 ? 'grab' : 'zoom-out'),
-                        animation: 'fadeIn 0.2s',
-                        overflow: 'hidden'
-                    }}
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            setPreviewImage(null);
-                            setImageZoom(1);
-                            setImagePosition({ x: 0, y: 0 });
-                        }
-                    }}
-                    onWheel={(e) => {
-                        e.stopPropagation();
-                        const delta = e.deltaY * -0.001;
-                        setImageZoom(prev => Math.min(Math.max(1, prev + delta), 5));
-                    }}
-                >
-                    <div
-                        style={{
-                            position: 'relative',
-                            width: '100%',
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <img
-                            src={previewImage}
-                            style={{
-                                maxWidth: imageZoom === 1 ? '95%' : 'none',
-                                maxHeight: imageZoom === 1 ? '95vh' : 'none',
-                                width: (imageZoom > 1) ? `${imageZoom * 100}%` : 'auto',
-                                objectFit: 'contain',
-                                borderRadius: '12px',
-                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                                transform: `translate(${imagePosition.x}px, ${imagePosition.y}px)`,
-                                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-                                userSelect: 'none',
-                                pointerEvents: 'none'
-                            }}
-                            alt="Preview"
-                            draggable={false}
-                        />
-
-                        {/* Drag overlay for panning */}
-                        {(imageZoom > 1) && (
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    inset: 0,
-                                    cursor: isDragging ? 'grabbing' : 'grab'
-                                }}
-                                onMouseDown={(e) => {
-                                    setIsDragging(true);
-                                    setDragStart({ x: e.clientX - imagePosition.x, y: e.clientY - imagePosition.y });
-                                }}
-                                onMouseMove={(e) => {
-                                    if (isDragging) {
-                                        setImagePosition({
-                                            x: e.clientX - dragStart.x,
-                                            y: e.clientY - dragStart.y
-                                        });
-                                    }
-                                }}
-                                onMouseUp={() => setIsDragging(false)}
-                                onMouseLeave={() => setIsDragging(false)}
-                            />
-                        )}
-
-                        {/* Close button */}
-                        <button
-                            onClick={() => {
-                                setPreviewImage(null);
-                                setImageZoom(1);
-                                setImagePosition({ x: 0, y: 0 });
-                            }}
-                            style={{
-                                position: 'absolute',
-                                top: '20px',
-                                right: '20px',
-                                background: 'white',
-                                border: 'none',
-                                padding: '12px',
-                                borderRadius: '50%',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                                transition: 'transform 0.2s',
-                                zIndex: 10
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
-                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                        >
-                            <X size={24} color="#1e293b" />
-                        </button>
-
-                        {/* Zoom indicator */}
-                        {(imageZoom > 1) && (
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    bottom: '20px',
-                                    left: '50%',
-                                    transform: 'translateX(-50%)',
-                                    background: 'rgba(255, 255, 255, 0.9)',
-                                    padding: '8px 16px',
-                                    borderRadius: '20px',
-                                    fontSize: '0.875rem',
-                                    fontWeight: 600,
-                                    color: '#1e293b',
-                                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                                    userSelect: 'none'
-                                }}
-                            >
-                                {Math.round(imageZoom * 100)}%
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+            <SimpleImageViewer
+                isOpen={!!simplePreviewImage}
+                onClose={() => setSimplePreviewImage(null)}
+                imageSrc={simplePreviewImage && simplePreviewImage.startsWith('/') ? `${API_BASE_URL}${simplePreviewImage}` : simplePreviewImage}
+            />
 
             {/* Simple Image Preview Modal (for Edit Modal) */}
             {simplePreviewImage && (
@@ -1795,6 +1809,14 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                 <div style={{ borderBottom: '1px solid black', width: '200px', margin: '0 auto 10px auto' }}></div>
                 <p>{localStorage.getItem('username') || 'Admin'}</p>
             </div>
+            <style>
+                {`
+                    .card, .table-container {
+                        position: relative;
+                        z-index: 1;
+                    }
+                `}
+            </style>
         </div >
     );
 }
