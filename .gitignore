@@ -24,7 +24,7 @@ dist-ssr
 *.sw?
 
 # Database and environment
-sicater_db.sql
+# sicater_db.sql
 db_backups/
 .env
 .env.local
