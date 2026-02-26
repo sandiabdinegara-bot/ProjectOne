@@ -182,7 +182,7 @@ switch ($method) {
             }
 
             if (!$id) {
-                $fields = ['id_pelanggan', 'id_sambungan', 'id_meter', 'nama', 'alamat', 'bulan', 'tahun', 'stan_akhir', 'foto', 'foto_rumah', 'kode_tarif', 'longitude', 'latitude', 'petugas', 'status_laporan', 'ai_ocr_status', 'tgl_verifikasi'];
+                $fields = ['id_pelanggan', 'id_sambungan', 'id_meter', 'nama', 'alamat', 'bulan', 'tahun', 'stan_akhir', 'foto', 'foto_rumah', 'kode_tarif', 'longitude', 'latitude', 'petugas', 'status_laporan', 'ai_ocr_status', 'tgl_verifikasi', 'verifikasi_catatan'];
                 $placeholders = array_fill(0, count($fields), '?');
                 $sql = "INSERT INTO data_pencatatan (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
                 $stmt = $conn->prepare($sql);
@@ -203,11 +203,12 @@ switch ($method) {
                     $data['petugas'] ?? null,
                     $data['status_laporan'] ?? null,
                     $data['ai_ocr_status'] ?? null,
-                    $data['tgl_verifikasi'] ?? null
+                    $data['tgl_verifikasi'] ?? null,
+                    $data['verifikasi_catatan'] ?? null
                 ]);
                 echo json_encode(["message" => "Recording added", "id" => $conn->lastInsertId()]);
             } else {
-                $sql = "UPDATE data_pencatatan SET stan_akhir = ?, foto = ?, foto_rumah = ?, petugas = ?, longitude = ?, latitude = ?, status_laporan = ?, ai_ocr_status = ?, tgl_verifikasi = ? WHERE id = ?";
+                $sql = "UPDATE data_pencatatan SET stan_akhir = ?, foto = ?, foto_rumah = ?, petugas = ?, longitude = ?, latitude = ?, status_laporan = ?, ai_ocr_status = ?, tgl_verifikasi = ?, verifikasi_catatan = ? WHERE id = ?";
                 $stmt = $conn->prepare($sql);
                 $stmt->execute([
                     $data['stan_akhir'],
@@ -219,6 +220,7 @@ switch ($method) {
                     $data['status_laporan'] ?? null,
                     $data['ai_ocr_status'] ?? null,
                     $data['tgl_verifikasi'] ?? null,
+                    $data['verifikasi_catatan'] ?? null,
                     $id
                 ]);
                 echo json_encode(["message" => "Recording updated"]);

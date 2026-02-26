@@ -408,6 +408,7 @@ export default function OfficerManagement({ isReport = false, onReportClose }) {
         const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_petugas');
         const headers = visibleCols.map(c => c.label);
         const rows = filteredOfficers.map(item => visibleCols.map(c => {
+            if (['nik', 'ktp'].includes(c.id)) return `="${item[c.id]}"`;
             if (['tgl_masuk', 'tgl_keluar', 'update_date'].includes(c.id)) {
                 return formatDate(item[c.id]);
             }

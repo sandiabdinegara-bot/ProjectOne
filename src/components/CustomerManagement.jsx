@@ -460,6 +460,7 @@ export default function CustomerManagement() {
         const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_rumah' && col.id !== 'foto_meter');
         const headers = visibleCols.map(c => c.label);
         const rows = filteredCustomers.map(c => visibleCols.map(col => {
+            if (['id_sambungan', 'id_meter', 'id_tag'].includes(col.id)) return `="${c[col.id]}"`;
             if (col.id === 'koordinat') return c.latitude && c.longitude ? `${c.latitude}, ${c.longitude}` : '-';
             if (col.id === 'active_date') return formatDate(c[col.id]);
             return c[col.id] || '-';

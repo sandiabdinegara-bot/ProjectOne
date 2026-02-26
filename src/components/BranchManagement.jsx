@@ -241,7 +241,10 @@ export default function BranchManagement({ isReport = false, onReportClose }) {
     const exportToCSV = () => {
         const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id));
         const headers = visibleCols.map(c => c.label);
-        const rows = filteredBranches.map(b => visibleCols.map(col => b[col.id] || '-'));
+        const rows = filteredBranches.map(b => visibleCols.map(col => {
+            if (col.id === 'kode_cabang') return `="${b[col.id]}"`;
+            return b[col.id] || '-';
+        }));
 
         const csvContent = [headers, ...rows].map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

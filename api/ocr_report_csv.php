@@ -92,7 +92,7 @@ foreach ($recordings as $rec) {
     $ocr_label = $ocr === 'GREEN' ? 'Sesuai' : ($ocr === 'YELLOW' ? 'Butuh Review' : ($ocr === 'RED' ? 'Mismatch' : '-'));
 
     $data[] = [
-        'ID Sambungan' => $rec['id_sambungan'],
+        'ID Sambungan' => '="' . $rec['id_sambungan'] . '"',
         'Nama Pelanggan' => $rec['nama'],
         'Stan Awal' => $analysis['stan_awal'],
         'Stan Akhir' => $rec['stan_akhir'],
@@ -100,7 +100,8 @@ foreach ($recordings as $rec) {
         'Status OCR' => $ocr_label,
         'Hasil Analisa' => $analysis['status'],
         'Kondisi Meter' => $rec['keterangan_kondisi'] ?: '-',
-        'Tanggal Verifikasi' => $rec['tgl_verifikasi'] ?: '-'
+        'Tanggal Verifikasi' => $rec['tgl_verifikasi'] ?: '-',
+        'Catatan Verifikasi' => $rec['verifikasi_catatan'] ?: '-'
     ];
 }
 

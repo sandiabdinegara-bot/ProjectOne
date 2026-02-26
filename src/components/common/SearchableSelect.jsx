@@ -156,9 +156,9 @@ const SearchableSelect = ({
                         </div>
                     </div>
                     <div style={{ maxHeight: '250px', overflowY: 'auto', padding: '0.25rem' }}>
-                        {filteredOptions.map(opt => (
+                        {filteredOptions.map((opt, index) => (
                             <div
-                                key={opt.value}
+                                key={`${opt.value}-${index}`}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onChange({ target: { value: opt.value } });

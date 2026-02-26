@@ -212,7 +212,13 @@ export default function OfficerMapping() {
                             label="PILIH PETUGAS"
                             placeholder={selectedBranch ? "-- Pilih Petugas --" : "Pilih cabang dahulu"}
                             icon={Users}
-                            options={officers.map(o => ({ value: String(o.id), label: o.nama }))}
+                            options={(() => {
+                                const uniqueNames = Array.from(new Set(officers.map(o => o.nama)));
+                                return uniqueNames.map(nama => {
+                                    const o = officers.find(off => off.nama === nama);
+                                    return { value: String(o.id), label: o.nama };
+                                });
+                            })()}
                             value={selectedOfficer}
                             disabled={!selectedBranch}
                             onChange={(e) => {

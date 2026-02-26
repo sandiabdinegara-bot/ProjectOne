@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, Droplets, BarChart2, History, FileText, X, LayoutDashboard, Settings, UserCircle, LogOut, Menu, ChevronLeft, Building, UserPlus, MapPin, ClipboardList, TrendingUp, HelpCircle, ChevronDown, FileSpreadsheet, FileDown } from 'lucide-react';
+import { Building2, Users, Droplets, BarChart2, History, FileText, X, LayoutDashboard, Settings, UserCircle, LogOut, Menu, ChevronLeft, Building, UserPlus, MapPin, ClipboardList, TrendingUp, HelpCircle, ChevronDown, FileSpreadsheet, FileDown, Table } from 'lucide-react';
 import CustomerManagement from './components/CustomerManagement';
 import BranchManagement from './components/BranchManagement';
 import RecordingManagement from './components/RecordingManagement';
@@ -8,6 +8,7 @@ import OfficerMapping from './components/OfficerMapping';
 import MeterAnalysis from './components/MeterAnalysis';
 import CustomerMapping from './components/CustomerMapping';
 import Dashboard from './components/Dashboard';
+import SearchableSelect from './components/common/SearchableSelect';
 
 
 // Memoized Components to prevent unnecessary re-renders when sidebar toggles
@@ -26,16 +27,26 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [expandedMenus, setExpandedMenus] = useState(['analisa']); // Keep analisa expanded by default or from storage
   const [showReportFilter, setShowReportFilter] = useState(false);
+  const [showPerformanceFilter, setShowPerformanceFilter] = useState(false);
+  const [showCustomerReportFilter, setShowCustomerReportFilter] = useState(false);
+  const [showGpsReportFilter, setShowGpsReportFilter] = useState(false);
+  const [showUsageSummaryFilter, setShowUsageSummaryFilter] = useState(false);
+  const [showZeroUsageFilter, setShowZeroUsageFilter] = useState(false);
   const [filterOptions, setFilterOptions] = useState({
     kondisi: [],
-    usage: []
+    usage: [],
+    branches: []
   });
   const [selectedFilters, setSelectedFilters] = useState({
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear(),
     kondisi: 'Semua',
     ocr: 'Semua',
-    usage: 'Semua'
+    usage: 'Semua',
+    branch: 'Semua',
+    date: '',
+    startDate: new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
   });
 
 
@@ -55,15 +66,18 @@ export default function App() {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const [kondisiRes, usageRes] = await Promise.all([
+        const [kondisiRes, usageRes, branchesRes] = await Promise.all([
           fetch('./api/options.php?type=status_kondisi'),
-          fetch('./api/options.php?type=status_analisa')
+          fetch('./api/options.php?type=status_analisa'),
+          fetch('./api/options.php?type=cabang')
         ]);
         const KondisiData = await kondisiRes.json();
         const UsageData = await usageRes.json();
+        const BranchData = await branchesRes.json();
         setFilterOptions({
           kondisi: Array.isArray(KondisiData) ? KondisiData : [],
-          usage: Array.isArray(UsageData) ? UsageData : []
+          usage: Array.isArray(UsageData) ? UsageData : [],
+          branches: Array.isArray(BranchData) ? BranchData : []
         });
       } catch (err) {
         console.error('Failed to fetch filter options:', err);
@@ -110,8 +124,114 @@ export default function App() {
     setShowReportFilter(false);
   };
 
+  const handleGeneratePerformanceReport = () => {
+    const params = new URLSearchParams({
+      month: selectedFilters.month,
+      year: selectedFilters.year,
+      branch_code: selectedFilters.branch,
+      date: selectedFilters.date,
+      start_date: selectedFilters.startDate,
+      end_date: selectedFilters.endDate
+    });
+    window.open(`./api/officer_performance_report_pdf.php?${params.toString()}`, '_blank');
+    setShowPerformanceFilter(false);
+  };
+
+  const handleExportPerformanceCSV = () => {
+    const params = new URLSearchParams({
+      month: selectedFilters.month,
+      year: selectedFilters.year,
+      branch_code: selectedFilters.branch,
+      date: selectedFilters.date,
+      start_date: selectedFilters.startDate,
+      end_date: selectedFilters.endDate,
+      format: 'csv'
+    });
+    window.location.href = `./api/officer_performance_report_csv.php?${params.toString()}`;
+    setShowPerformanceFilter(false);
+  };
+  const handleExportPerformanceExcel = () => {
+    const params = new URLSearchParams({
+      month: selectedFilters.month,
+      year: selectedFilters.year,
+      branch_code: selectedFilters.branch,
+      date: selectedFilters.date,
+      start_date: selectedFilters.startDate,
+      end_date: selectedFilters.endDate,
+      format: 'excel'
+    });
+    window.location.href = `./api/officer_performance_report_csv.php?${params.toString()}`;
+    setShowPerformanceFilter(false);
+  };
+
+  const handleGenerateCustomerReport = () => {
+    const params = new URLSearchParams({
+      branch_code: selectedFilters.branch
+    });
+    window.open(`./api/customer_list_report_pdf.php?${params.toString()}`, '_blank');
+    setShowCustomerReportFilter(false);
+  };
+
+  const handleGenerateGpsReport = () => {
+    const params = new URLSearchParams({
+      month: selectedFilters.month,
+      year: selectedFilters.year,
+      branch_code: selectedFilters.branch
+    });
+    window.open(`./api/gps_audit_report_pdf.php?${params.toString()}`, '_blank');
+    setShowGpsReportFilter(false);
+  };
+
+  const handleGenerateUsageSummaryReport = () => {
+    const params = new URLSearchParams({
+      month: selectedFilters.month,
+      year: selectedFilters.year,
+      branch_code: selectedFilters.branch
+    });
+    window.open(`./api/usage_summary_report_pdf.php?${params.toString()}`, '_blank');
+    setShowUsageSummaryFilter(false);
+  };
+
+  const handleGenerateZeroUsageReport = () => {
+    const params = new URLSearchParams({
+      month: selectedFilters.month,
+      year: selectedFilters.year,
+      branch_code: selectedFilters.branch
+    });
+    window.open(`./api/zero_usage_report_pdf.php?${params.toString()}`, '_blank');
+    setShowZeroUsageFilter(false);
+  };
+
+  const handleExportCustomerCSV = () => {
+    const params = new URLSearchParams({
+      branch_code: selectedFilters.branch,
+      format: 'csv'
+    });
+    window.location.href = `./api/customer_list_report_csv.php?${params.toString()}`;
+    setShowCustomerReportFilter(false);
+  };
+
+  const handleExportCustomerExcel = () => {
+    const params = new URLSearchParams({
+      branch_code: selectedFilters.branch,
+      format: 'excel'
+    });
+    window.location.href = `./api/customer_list_report_csv.php?${params.toString()}`;
+    setShowCustomerReportFilter(false);
+  };
+
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard Overview', icon: <LayoutDashboard size={20} /> },
+    { id: 'catat', label: 'Pencatatan Bulan Berjalan', icon: <Droplets size={20} /> },
+    {
+      id: 'analisa',
+      label: 'Analisa Baca Meter',
+      icon: <BarChart2 size={20} />,
+      subItems: [
+        { id: 'analisa_review', label: 'Daftar Koreksi ABM' },
+      ]
+    },
+    { id: 'pelanggan', label: 'Data Pelanggan', icon: <Users size={20} /> },
     {
       id: 'cabang_parent',
       label: 'Data Cabang',
@@ -123,17 +243,6 @@ export default function App() {
         { id: 'pelanggan_mapping', label: 'Pemetaan Pelanggan' },
       ]
     },
-    { id: 'pelanggan', label: 'Data Pelanggan', icon: <Users size={20} /> },
-    { id: 'catat', label: 'Pencatatan Bulan Berjalan', icon: <Droplets size={20} /> },
-    {
-      id: 'analisa',
-      label: 'Analisa Baca Meter',
-      icon: <BarChart2 size={20} />,
-      subItems: [
-        { id: 'analisa_review', label: 'Daftar Koreksi ABM' },
-      ]
-    },
-    { id: 'history_catat', label: 'History Pencatatan', icon: <History size={20} /> },
     {
       id: 'laporan_parent',
       label: 'Laporan',
@@ -142,8 +251,14 @@ export default function App() {
         { id: 'laporan_cabang', label: 'Report Cabang' },
         { id: 'laporan_petugas', label: 'Report Petugas' },
         { id: 'laporan_analisa_ocr', label: 'Report ABM' },
+        { id: 'laporan_kinerja', label: 'Report Kinerja' },
+        { id: 'laporan_pelanggan_list', label: 'Report Pelanggan' },
+        { id: 'laporan_gps_audit', label: 'Report Audit GPS' },
+        { id: 'laporan_usage_summary', label: 'Report Rekap Pemakaian' },
+        { id: 'laporan_zero_usage', label: 'Report Meter Nol' },
       ]
     },
+    { id: 'history_catat', label: 'History Pencatatan', icon: <History size={20} /> },
   ];
 
   const handleTabClick = (id) => {
@@ -157,6 +272,26 @@ export default function App() {
     }
     if (id === 'laporan_analisa_ocr') {
       setShowReportFilter(true);
+      return;
+    }
+    if (id === 'laporan_kinerja') {
+      setShowPerformanceFilter(true);
+      return;
+    }
+    if (id === 'laporan_pelanggan_list') {
+      setShowCustomerReportFilter(true);
+      return;
+    }
+    if (id === 'laporan_gps_audit') {
+      setShowGpsReportFilter(true);
+      return;
+    }
+    if (id === 'laporan_usage_summary') {
+      setShowUsageSummaryFilter(true);
+      return;
+    }
+    if (id === 'laporan_zero_usage') {
+      setShowZeroUsageFilter(true);
       return;
     }
     setActiveTab(id);
@@ -368,7 +503,7 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Status OCR (Kesesuaian)</label>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Kesesuaian Foto (AI)</label>
                   <select
                     value={selectedFilters.ocr}
                     onChange={(e) => setSelectedFilters({ ...selectedFilters, ocr: e.target.value })}
@@ -462,6 +597,329 @@ export default function App() {
                     <span>CSV</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Modal for Officer Performance Report */}
+        {showPerformanceFilter && (
+          <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+            <div className="modal-content" style={{ width: '400px', background: 'white', borderRadius: '16px', padding: '2rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: 'fadeInScale 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', overflow: 'visible' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>Filter Laporan Kinerja</h3>
+                <button onClick={() => setShowPerformanceFilter(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={24} /></button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div className="form-group">
+                  <SearchableSelect
+                    label="Cabang"
+                    options={[
+                      { value: 'Semua', label: 'Semua Cabang' },
+                      ...filterOptions.branches.map(b => ({ value: b.kode_cabang, label: b.cabang }))
+                    ]}
+                    value={selectedFilters.branch}
+                    onChange={(e) => setSelectedFilters({ ...selectedFilters, branch: e.target.value })}
+                    hideValue={true}
+                    containerStyle={{ marginBottom: 0 }}
+                    placeholder="Pilih Cabang..."
+                    searchPlaceholder="Cari nama cabang..."
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 700, color: '#64748b', marginBottom: '0.75rem' }}>
+                    Pilih Tanggal
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="input-group">
+                      <small style={{ color: '#94a3b8', fontSize: '0.7rem', marginBottom: '0.25rem', display: 'block' }}>Dari Tanggal</small>
+                      <input
+                        type="date"
+                        value={selectedFilters.startDate}
+                        onChange={(e) => setSelectedFilters({ ...selectedFilters, startDate: e.target.value, date: '' })}
+                        max={new Date().toISOString().split('T')[0]}
+                        style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '0.875rem' }}
+                      />
+                    </div>
+                    <div className="input-group">
+                      <small style={{ color: '#94a3b8', fontSize: '0.7rem', marginBottom: '0.25rem', display: 'block' }}>Sampai Tanggal</small>
+                      <input
+                        type="date"
+                        value={selectedFilters.endDate}
+                        onChange={(e) => setSelectedFilters({ ...selectedFilters, endDate: e.target.value, date: '' })}
+                        max={new Date().toISOString().split('T')[0]}
+                        style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '0.875rem' }}
+                      />
+                    </div>
+                  </div>
+                  {(() => {
+                    const diffTime = Math.abs(new Date(selectedFilters.endDate) - new Date(selectedFilters.startDate));
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                    if (diffDays > 7) {
+                      return (
+                        <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.5rem', fontWeight: 600 }}>
+                          ⚠️ Maksimal Penarikan 7 hari
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem',
+                  opacity: (selectedFilters.startDate && selectedFilters.endDate) ? 0.5 : 1,
+                  pointerEvents: (selectedFilters.startDate && selectedFilters.endDate) ? 'none' : 'auto'
+                }}>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Bulan</label>
+                    <select
+                      value={selectedFilters.month}
+                      onChange={(e) => setSelectedFilters({ ...selectedFilters, month: e.target.value })}
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const monthIndex = i;
+                        const date = new Date();
+                        const currentMonthCount = date.getMonth() + 1;
+                        const currentYearCount = date.getFullYear();
+                        const isFuture = selectedFilters.year > currentYearCount || (Number(selectedFilters.year) === currentYearCount && monthIndex + 1 > currentMonthCount);
+
+                        return (
+                          <option key={i + 1} value={i + 1} disabled={isFuture}>
+                            {new Date(0, i).toLocaleString('id-ID', { month: 'long' })}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Tahun</label>
+                    <select
+                      value={selectedFilters.year}
+                      onChange={(e) => setSelectedFilters({ ...selectedFilters, year: e.target.value })}
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}
+                    >
+                      {[2024, 2025, 2026].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginTop: '1.5rem',
+                  opacity: (() => {
+                    const now = new Date();
+                    const isCurrentMonth = Number(selectedFilters.month) === (now.getMonth() + 1) && Number(selectedFilters.year) === now.getFullYear();
+                    const diffTime = Math.abs(new Date(selectedFilters.endDate) - new Date(selectedFilters.startDate));
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+                    // Logic: Must use range and <= 7 days IF it's current month. 
+                    // Or if range is used anywhere, must be <= 7 days.
+                    const isRangeUsed = selectedFilters.startDate && selectedFilters.endDate;
+                    if (isRangeUsed && diffDays > 7) return 0.5;
+                    if (isCurrentMonth && !isRangeUsed) return 0.5;
+                    return 1;
+                  })(),
+                  pointerEvents: (() => {
+                    const now = new Date();
+                    const isCurrentMonth = Number(selectedFilters.month) === (now.getMonth() + 1) && Number(selectedFilters.year) === now.getFullYear();
+                    const diffTime = Math.abs(new Date(selectedFilters.endDate) - new Date(selectedFilters.startDate));
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+                    const isRangeUsed = selectedFilters.startDate && selectedFilters.endDate;
+                    if (isRangeUsed && diffDays > 7) return 'none';
+                    if (isCurrentMonth && !isRangeUsed) return 'none';
+                    return 'auto';
+                  })()
+                }}>
+                  <button
+                    onClick={handleGeneratePerformanceReport}
+                    style={{
+                      padding: '0.75rem', borderRadius: '10px', border: 'none',
+                      background: '#2563eb',
+                      color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = '#1d4ed8';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = '#2563eb';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    <FileText size={16} />
+                    <span>PDF</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportPerformanceExcel}
+                    style={{
+                      padding: '0.75rem', borderRadius: '10px', border: 'none',
+                      background: '#059669',
+                      color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = '#047857';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = '#059669';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    <FileSpreadsheet size={16} />
+                    <span>EXCEL</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportPerformanceCSV}
+                    style={{
+                      padding: '0.75rem', borderRadius: '10px', border: 'none',
+                      background: '#475569',
+                      color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = '#334155';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = '#475569';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Modal for GPS Audit Report */}
+        {showGpsReportFilter && (
+          <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+            <div className="modal-content" style={{ width: '400px', background: 'white', borderRadius: '16px', padding: '2rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: 'fadeInScale 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', overflow: 'visible' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>Filter Audit GPS</h3>
+                <button onClick={() => setShowGpsReportFilter(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={24} /></button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div className="form-group">
+                  <SearchableSelect
+                    label="Cabang"
+                    options={[{ value: 'Semua', label: 'Semua Cabang' }, ...filterOptions.branches.map(b => ({ value: b.kode_cabang, label: b.cabang }))]}
+                    value={selectedFilters.branch}
+                    onChange={(e) => setSelectedFilters({ ...selectedFilters, branch: e.target.value })}
+                    hideValue={true} containerStyle={{ marginBottom: 0 }} placeholder="Pilih Cabang..." searchPlaceholder="Cari nama cabang..."
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Bulan</label>
+                    <select value={selectedFilters.month} onChange={(e) => setSelectedFilters({ ...selectedFilters, month: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString('id-ID', { month: 'long' })}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Tahun</label>
+                    <select value={selectedFilters.year} onChange={(e) => setSelectedFilters({ ...selectedFilters, year: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button onClick={handleGenerateGpsReport} style={{ marginTop: '1rem', width: '100%', padding: '0.75rem', borderRadius: '10px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <FileText size={18} /> <span>Generate Report (PDF)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Modal for Usage Summary Report */}
+        {showUsageSummaryFilter && (
+          <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+            <div className="modal-content" style={{ width: '400px', background: 'white', borderRadius: '16px', padding: '2rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: 'fadeInScale 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', overflow: 'visible' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>Filter Rekap Pemakaian</h3>
+                <button onClick={() => setShowUsageSummaryFilter(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={24} /></button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div className="form-group">
+                  <SearchableSelect
+                    label="Cabang"
+                    options={[{ value: 'Semua', label: 'Semua Cabang' }, ...filterOptions.branches.map(b => ({ value: b.kode_cabang, label: b.cabang }))]}
+                    value={selectedFilters.branch}
+                    onChange={(e) => setSelectedFilters({ ...selectedFilters, branch: e.target.value })}
+                    hideValue={true} containerStyle={{ marginBottom: 0 }} placeholder="Pilih Cabang..." searchPlaceholder="Cari nama cabang..."
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Bulan</label>
+                    <select value={selectedFilters.month} onChange={(e) => setSelectedFilters({ ...selectedFilters, month: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString('id-ID', { month: 'long' })}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Tahun</label>
+                    <select value={selectedFilters.year} onChange={(e) => setSelectedFilters({ ...selectedFilters, year: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button onClick={handleGenerateUsageSummaryReport} style={{ marginTop: '1rem', width: '100%', padding: '0.75rem', borderRadius: '10px', border: 'none', background: '#059669', color: 'white', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <FileText size={18} /> <span>Generate Report (PDF)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Modal for Zero Usage Report */}
+        {showZeroUsageFilter && (
+          <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+            <div className="modal-content" style={{ width: '400px', background: 'white', borderRadius: '16px', padding: '2rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: 'fadeInScale 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', overflow: 'visible' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>Filter Laporan Meter Nol</h3>
+                <button onClick={() => setShowZeroUsageFilter(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={24} /></button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div className="form-group">
+                  <SearchableSelect
+                    label="Cabang"
+                    options={[{ value: 'Semua', label: 'Semua Cabang' }, ...filterOptions.branches.map(b => ({ value: b.kode_cabang, label: b.cabang }))]}
+                    value={selectedFilters.branch}
+                    onChange={(e) => setSelectedFilters({ ...selectedFilters, branch: e.target.value })}
+                    hideValue={true} containerStyle={{ marginBottom: 0 }} placeholder="Pilih Cabang..." searchPlaceholder="Cari nama cabang..."
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Bulan</label>
+                    <select value={selectedFilters.month} onChange={(e) => setSelectedFilters({ ...selectedFilters, month: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString('id-ID', { month: 'long' })}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Tahun</label>
+                    <select value={selectedFilters.year} onChange={(e) => setSelectedFilters({ ...selectedFilters, year: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button onClick={handleGenerateZeroUsageReport} style={{ marginTop: '1rem', width: '100%', padding: '0.75rem', borderRadius: '10px', border: 'none', background: '#1e293b', color: 'white', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <FileText size={18} /> <span>Generate Report (PDF)</span>
+                </button>
               </div>
             </div>
           </div>

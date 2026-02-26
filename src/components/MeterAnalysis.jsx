@@ -31,6 +31,178 @@ const ALL_COLUMNS = [
 
 const DEFAULT_COLUMNS = ['id_sambungan', 'id_meter', 'id_tag', 'nama', 'alamat', 'kode_tarif', 'stan_akhir', 'stan_awal', 'PEMAKAIAN (m³)', 'ai_ocr_status', 'hasil_analisa', 'status_laporan', 'tgl_verifikasi'];
 
+// Helper Component for Edit Modal Content to prevent parent re-renders on typing
+const EditRecordingForm = React.memo(({
+    recording,
+    initialFormData,
+    officers,
+    statusKondisiOptions,
+    ocrStatusFilter,
+    getCustomerInfo,
+    getDerivedOcrStatus,
+    onClose,
+    onSubmit,
+    setSimplePreviewImage,
+    API_BASE_URL,
+    loading
+}) => {
+    const [formData, setFormData] = useState(initialFormData);
+    const [fotoPreview, setFotoPreview] = useState(recording.foto);
+    const [fotoRumahPreview, setFotoRumahPreview] = useState(recording.foto_rumah);
+
+    // Sync state when recording changes
+    React.useEffect(() => {
+        setFormData(initialFormData);
+        setFotoPreview(recording.foto);
+        setFotoRumahPreview(recording.foto_rumah);
+    }, [recording.id, initialFormData]);
+
+    const handleFileChange = (e, field) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (field === 'foto') {
+                    setFotoPreview(reader.result);
+                    setFormData(prev => ({ ...prev, foto: file }));
+                } else {
+                    setFotoRumahPreview(reader.result);
+                    setFormData(prev => ({ ...prev, foto_rumah: file }));
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    return (
+        <div className="modal-content" style={{ animation: 'slideUp 0.3s', width: '90%', maxWidth: '950px', borderRadius: '20px', padding: 0, overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: 'white' }}>
+            <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                    Koreksi Analisa Meter
+                </h2>
+                <button type="button" onClick={onClose} style={{ width: '36px', height: '36px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                    <X size={20} />
+                </button>
+            </div>
+
+            <form onSubmit={(e) => onSubmit(e, formData)} style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
+                {/* Detail Pelanggan Section */}
+                <div style={{ marginBottom: '2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '0.5rem', borderLeft: '4px solid var(--primary)' }}>
+                        <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Detail Pelanggan</h3>
+                    </div>
+                    <div style={{
+                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem 1rem', background: '#f8fafc', padding: '1.5rem', borderRadius: '16px', border: '1px solid #e2e8f0'
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Nama Pelanggan</div>
+                            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0f172a' }}>{formData.nama}</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>No. Sambungan</div>
+                            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>{formData.id_sambungan}</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>ID Meter</div>
+                            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>{formData.id_meter}</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>ID Tag</div>
+                            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>{formData.id_tag || getCustomerInfo(formData.id_pelanggan).id_tag || '-'}</div>
+                        </div>
+                        <div style={{ gridColumn: '1 / -1', textAlign: 'center', paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.35rem' }}>
+                                {ocrStatusFilter === 'REVIEW' ? 'Pilih Status OCR' : 'Hasil OCR'}
+                            </div>
+                            {ocrStatusFilter === 'REVIEW' ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                    {[
+                                        { id: 'YELLOW', label: 'REVIEW', icon: <AlertCircle size={16} />, color: '#854d0e', bg: '#fef9c3' },
+                                        { id: 'RED', label: 'TIDAK SESUAI', icon: <XCircle size={16} />, color: '#991b1b', bg: '#fee2e2' },
+                                        { id: 'VERIFIED', label: 'VERIFIKASI', icon: <CheckCircle2 size={16} />, color: '#1d4ed8', bg: '#dbeafe' },
+                                    ].map((status) => {
+                                        const currentStatus = getDerivedOcrStatus(formData);
+                                        const isActive = currentStatus === status.id;
+                                        return (
+                                            <button key={status.id} type="button" onClick={() => setFormData(prev => ({ ...prev, ai_ocr_status: status.id }))}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.75rem', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, transition: 'all 0.2s ease', cursor: 'pointer', border: isActive ? `2px solid ${status.color}` : '1px solid #e2e8f0', backgroundColor: isActive ? status.bg : '#fff', color: isActive ? status.color : '#64748b', boxShadow: isActive ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', transform: isActive ? 'scale(1.05)' : 'scale(1)' }}>
+                                                {status.icon} <span>{status.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: getDerivedOcrStatus(formData) === 'GREEN' ? '#166534' : (getDerivedOcrStatus(formData) === 'YELLOW' ? '#854d0e' : (getDerivedOcrStatus(formData) === 'RED' ? '#991b1b' : (getDerivedOcrStatus(formData) === 'VERIFIED' ? '#1d4ed8' : '#64748b'))), fontWeight: 700, fontSize: '0.9rem' }}>
+                                    {getDerivedOcrStatus(formData) === 'GREEN' && <CheckCircle2 size={18} />}
+                                    {getDerivedOcrStatus(formData) === 'YELLOW' && <AlertCircle size={18} />}
+                                    {getDerivedOcrStatus(formData) === 'RED' && <XCircle size={18} />}
+                                    {(getDerivedOcrStatus(formData) === 'VERIFIED' || getDerivedOcrStatus(formData) === 'Sesuai (Manual)') && <CheckCircle2 size={18} />}
+                                    <span style={{ textTransform: 'uppercase' }}>{getDerivedOcrStatus(formData) === 'GREEN' ? 'SESUAI' : (getDerivedOcrStatus(formData) === 'YELLOW' ? 'BUTUH REVIEW' : (getDerivedOcrStatus(formData) === 'RED' ? 'TIDAK SESUAI' : ((getDerivedOcrStatus(formData) === 'VERIFIED' || getDerivedOcrStatus(formData) === 'Sesuai (Manual)') ? 'SUDAH VERIFIKASI' : '-')))}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid-2-col">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div className="form-group">
+                            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Stan Awal (Bulan Lalu)</label>
+                            <div style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f0f9ff', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0369a1', fontSize: '0.95rem', fontWeight: 700 }}>
+                                <HardDrive size={16} /> <span>{formData.stan_awal}</span>
+                            </div>
+                        </div>
+                        <div className="form-row" style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Stan Akhir Input</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input type="number" value={formData.stan_akhir} onChange={(e) => setFormData(prev => ({ ...prev, stan_akhir: e.target.value }))} style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '1rem', fontWeight: 700 }} />
+                                    <Edit2 size={16} color="#94a3b8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
+                                </div>
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Pemakaian (m³)</label>
+                                <div style={{ width: '100%', padding: '0 0.75rem', height: '48px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b', fontSize: '0.95rem', fontWeight: 800 }}>
+                                    <Droplets size={16} color="#0ea5e9" />
+                                    <span>{(() => { const akhir = Number(formData.stan_akhir || 0); if (akhir === 0) return "0 m³"; return (akhir - Number(formData.stan_awal || 0)) + " m³"; })()}</span>
+                                </div>
+                            </div>
+                        </div>
+                        {getDerivedOcrStatus(formData) !== 'GREEN' && (
+                            <div className="form-group">
+                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Catatan Verifikasi {(getDerivedOcrStatus(formData) === 'YELLOW' || getDerivedOcrStatus(formData) === 'RED') && <span style={{ color: '#ef4444' }}>*</span>}</label>
+                                <textarea placeholder="Berikan alasan verifikasi atau catatan kesalahan (misal: Angka input tidak sama dengan foto)..." value={formData.verifikasi_catatan || ''} onChange={(e) => setFormData(prev => ({ ...prev, verifikasi_catatan: e.target.value }))} style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.875rem', minHeight: '80px', resize: 'vertical', fontFamily: 'inherit' }} />
+                            </div>
+                        )}
+                    </div>
+                    <div>
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                            {[{ id: 'foto', label: 'FOTO METER', preview: fotoPreview }, { id: 'foto_rumah', label: 'FOTO RUMAH', preview: fotoRumahPreview }].map(item => (
+                                <div key={item.id} style={{ textAlign: 'center', flex: 1 }}>
+                                    <div onClick={() => item.preview && setSimplePreviewImage(item.preview)} style={{ width: '100%', aspectRatio: '4/3', border: '2px solid #e2e8f0', borderRadius: '12px', position: 'relative', overflow: 'hidden', background: '#f8fafc', cursor: item.preview ? 'pointer' : 'default' }}>
+                                        {item.preview ? <img src={item.preview && item.preview.startsWith('/') ? `${API_BASE_URL}${item.preview}` : item.preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={item.label} /> : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1' }}><Camera size={24} /><span style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>Tidak Ada Foto</span></div>}
+                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', color: 'white', fontSize: '0.6rem', padding: '4px', textTransform: 'uppercase', fontWeight: 700 }}>{item.label}</div>
+                                    </div>
+                                    <label className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.75rem', padding: '0.4rem 0.75rem', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '8px', border: '1px solid #e2e8f0', width: '100%' }}>
+                                        <Camera size={14} /> Ganti Foto <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, item.id)} style={{ display: 'none' }} />
+                                    </label>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                    <button type="button" className="btn btn-outline" style={{ padding: '0.625rem 1.5rem', borderRadius: '8px', fontWeight: 600 }} onClick={onClose}>Batal</button>
+                    <button type="submit" disabled={loading} className="btn btn-primary" style={{ padding: '0.625rem 2rem', borderRadius: '8px', fontWeight: 600, boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)' }}>
+                        {loading ? 'Menyimpan...' : 'Simpan Perubahan'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+});
+
 export default function MeterAnalysis({ ocrStatusFilter }) {
     const [recordings, setRecordings] = useState([]);
     const [customers, setCustomers] = useState([]);
@@ -84,31 +256,9 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
     // Edit Modal State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingRecording, setEditingRecording] = useState(null);
+    const [initialEditFormData, setInitialEditFormData] = useState(null); // Pass this to child
     const [officers, setOfficers] = useState([]);
-    const [fotoPreview, setFotoPreview] = useState(null);
-    const [fotoRumahPreview, setFotoRumahPreview] = useState(null);
     const [simplePreviewImage, setSimplePreviewImage] = useState(null);
-    const [formData, setFormData] = useState({
-        id: '',
-        id_pelanggan: '',
-        id_sambungan: '',
-        id_meter: '',
-        nama: '',
-        alamat: '',
-        kode_tarif: '',
-        stan_awal: '',
-        stan_akhir: 0,
-        pemakaian: '',
-        petugas: '',
-        status_laporan: '',
-        latitude: '',
-        longitude: '',
-        foto: null,
-        foto_rumah: null,
-        bulan: '',
-        tahun: '',
-        ai_ocr_status: ''
-    });
 
     // Unified mount effect
     const fetchData = async () => {
@@ -205,11 +355,11 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
     };
 
     const handleEditClick = async (row) => {
-        setEditingRecording(row); // Set editingRecording for the modal
-        const stanAwal = getStanAwal(row); // Calculate stan_awal
-        const usage = parseInt(row.stan_akhir) - stanAwal; // Calculate usage
+        setEditingRecording(row);
+        const stanAwal = getStanAwal(row);
+        const usage = parseInt(row.stan_akhir) - stanAwal;
 
-        setFormData({
+        setInitialEditFormData({
             id: row.id,
             id_pelanggan: row.id_pelanggan,
             id_sambungan: row.id_sambungan,
@@ -217,68 +367,53 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
             nama: row.nama,
             alamat: row.alamat,
             kode_tarif: row.kode_tarif,
-            stan_awal: stanAwal, // Use calculated stan_awal
+            stan_awal: stanAwal,
             stan_akhir: row.stan_akhir,
-            pemakaian: usage, // Use calculated usage
+            pemakaian: usage,
             petugas: row.petugas,
             status_laporan: row.status_laporan,
             latitude: row.latitude,
             longitude: row.longitude,
-            foto: row.foto, // Assuming 'foto' is the meter photo
+            foto: row.foto,
             foto_rumah: row.foto_rumah,
             bulan: row.bulan,
             tahun: row.tahun,
-            ai_ocr_status: row.ai_ocr_status
+            ai_ocr_status: row.ai_ocr_status,
+            verifikasi_catatan: row.verifikasi_catatan || ''
         });
-        setFotoPreview(row.foto); // Assuming 'foto' is the meter photo
-        setFotoRumahPreview(row.foto_rumah);
         setIsEditModalOpen(true);
     };
 
     const handleCloseEditModal = () => {
         setIsEditModalOpen(false);
         setEditingRecording(null);
-        setFotoPreview(null);
-        setFotoRumahPreview(null);
+        setInitialEditFormData(null);
     };
-
-    const handleEditFileChange = (e, field) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                if (field === 'foto') { // Changed from 'foto_meter' to 'foto'
-                    setFotoPreview(reader.result);
-                    setFormData({ ...formData, foto: file }); // Changed from 'foto_meter' to 'foto'
-                } else {
-                    setFotoRumahPreview(reader.result);
-                    setFormData({ ...formData, foto_rumah: file });
-                }
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-    const handleEditSubmit = async (e) => {
+    const handleEditSubmit = async (e, finalFormData) => {
         e.preventDefault();
+
+        // Validation for Verification Notes
+        const currentOcrStatus = getDerivedOcrStatus(finalFormData);
+        if ((currentOcrStatus === 'YELLOW' || currentOcrStatus === 'RED') && !finalFormData.verifikasi_catatan?.trim()) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Catatan Wajib Diisi',
+                text: `Mohon isi Catatan Verifikasi untuk status ${currentOcrStatus === 'YELLOW' ? 'Review' : 'Tidak Sesuai'}`,
+                confirmButtonColor: 'var(--primary)'
+            });
+            return;
+        }
 
         try {
             setLoading(true);
             const body = new FormData();
-
-            // Capture current timestamp
             const now = new Date();
-            const timestamp = now.getFullYear() + '-' +
-                String(now.getMonth() + 1).padStart(2, '0') + '-' +
-                String(now.getDate()).padStart(2, '0') + ' ' +
-                String(now.getHours()).padStart(2, '0') + ':' +
-                String(now.getMinutes()).padStart(2, '0') + ':' +
-                String(now.getSeconds()).padStart(2, '0');
+            const timestamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
 
-            Object.keys(formData).forEach(key => {
-                body.append(key, (formData[key] === 0 || formData[key]) ? formData[key] : '');
+            Object.keys(finalFormData).forEach(key => {
+                body.append(key, (finalFormData[key] === 0 || finalFormData[key]) ? finalFormData[key] : '');
             });
 
-            // Only update verification date if original status was YELLOW or RED (Needs Review/Mismatch)
             const originalStatus = getDerivedOcrStatus(editingRecording);
             if (originalStatus === 'YELLOW' || originalStatus === 'RED') {
                 body.append('tgl_verifikasi', timestamp);
@@ -303,11 +438,7 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
             });
         } catch (error) {
             console.error('Error saving edit:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Gagal',
-                text: 'Terjadi kesalahan saat menyimpan data',
-            });
+            Swal.fire({ icon: 'error', title: 'Gagal', text: 'Terjadi kesalahan saat menyimpan data' });
         } finally {
             setLoading(false);
         }
@@ -492,9 +623,9 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
             const usage = calculateUsage(rec);
 
             return columns.map(col => {
-                if (col.id === 'id_sambungan') return rec.id_sambungan;
-                if (col.id === 'id_meter') return rec.id_meter;
-                if (col.id === 'id_tag') return customer.id_tag || '-';
+                if (col.id === 'id_sambungan') return `="${rec.id_sambungan}"`;
+                if (col.id === 'id_meter') return `="${rec.id_meter}"`;
+                if (col.id === 'id_tag') return customer.id_tag ? `="${customer.id_tag}"` : '-';
                 if (col.id === 'nama') return rec.nama;
                 if (col.id === 'alamat') return rec.alamat;
                 if (col.id === 'kode_tarif') return rec.kode_tarif;
@@ -1508,6 +1639,16 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Verification Notes Display */}
+                                    {selectedDetail.verifikasi_catatan && (
+                                        <div style={{ marginTop: '0.5rem', background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                            <label style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>Catatan Verifikasi</label>
+                                            <div style={{ fontSize: '0.875rem', color: '#334155', fontStyle: 'italic', lineHeight: '1.5', textAlign: 'center' }}>
+                                                "{selectedDetail.verifikasi_catatan}"
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -1590,217 +1731,23 @@ export default function MeterAnalysis({ ocrStatusFilter }) {
                 </div>
             )}
             {/* Edit Modal */}
-            {isEditModalOpen && (
+            {isEditModalOpen && initialEditFormData && (
                 <div className="modal-overlay" style={{ animation: 'fadeIn 0.2s', backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', position: 'fixed', inset: 0, zIndex: 1050, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div className="modal-content" style={{ animation: 'slideUp 0.3s', width: '90%', maxWidth: '950px', borderRadius: '20px', padding: 0, overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: 'white' }}>
-                        <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white' }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-                                Koreksi Analisa Meter
-                            </h2>
-                            <button onClick={handleCloseEditModal} style={{ width: '36px', height: '36px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-                                <X size={20} />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleEditSubmit} style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
-
-                            {/* Detail Pelanggan Section */}
-                            <div style={{ marginBottom: '2rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '0.5rem', borderLeft: '4px solid var(--primary)' }}>
-                                    <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Detail Pelanggan</h3>
-                                </div>
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '1fr 1fr',
-                                    gap: '1.25rem 1rem',
-                                    background: '#f8fafc',
-                                    padding: '1.5rem',
-                                    borderRadius: '16px',
-                                    border: '1px solid #e2e8f0'
-                                }}>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Nama Pelanggan</div>
-                                        <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0f172a' }}>{formData.nama}</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>No. Sambungan</div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>{formData.id_sambungan}</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>ID Meter</div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>{formData.id_meter}</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>ID Tag</div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>{formData.id_tag || getCustomerInfo(formData.id_pelanggan).id_tag || '-'}</div>
-                                    </div>
-                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
-                                        <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.35rem' }}>
-                                            {ocrStatusFilter === 'REVIEW' ? 'Pilih Status OCR' : 'Hasil OCR'}
-                                        </div>
-
-                                        {ocrStatusFilter === 'REVIEW' ? (
-                                            <div style={{
-                                                display: 'flex',
-                                                flexWrap: 'wrap',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '0.5rem',
-                                                marginTop: '0.25rem'
-                                            }}>
-                                                {[
-                                                    { id: 'GREEN', label: 'SESUAI', icon: <CheckCircle2 size={16} />, color: '#166534', bg: '#dcfce7' },
-                                                    { id: 'YELLOW', label: 'REVIEW', icon: <AlertCircle size={16} />, color: '#854d0e', bg: '#fef9c3' },
-                                                    { id: 'RED', label: 'TIDAK SESUAI', icon: <XCircle size={16} />, color: '#991b1b', bg: '#fee2e2' },
-                                                    { id: 'VERIFIED', label: 'VERIFIKASI', icon: <CheckCircle2 size={16} />, color: '#1d4ed8', bg: '#dbeafe' },
-                                                ].map((status) => {
-                                                    const currentStatus = getDerivedOcrStatus(formData);
-                                                    const isActive = currentStatus === status.id;
-                                                    return (
-                                                        <button
-                                                            key={status.id}
-                                                            type="button"
-                                                            onClick={() => setFormData(prev => ({ ...prev, ai_ocr_status: status.id }))}
-                                                            style={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '0.35rem',
-                                                                padding: '0.4rem 0.75rem',
-                                                                borderRadius: '8px',
-                                                                fontSize: '0.7rem',
-                                                                fontWeight: 700,
-                                                                transition: 'all 0.2s ease',
-                                                                cursor: 'pointer',
-                                                                border: isActive ? `2px solid ${status.color}` : '1px solid #e2e8f0',
-                                                                backgroundColor: isActive ? status.bg : '#fff',
-                                                                color: isActive ? status.color : '#64748b',
-                                                                boxShadow: isActive ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-                                                                transform: isActive ? 'scale(1.05)' : 'scale(1)'
-                                                            }}
-                                                        >
-                                                            {status.icon}
-                                                            <span>{status.label}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : (
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '0.5rem',
-                                                color: getDerivedOcrStatus(formData) === 'GREEN' ? '#166534' :
-                                                    (getDerivedOcrStatus(formData) === 'YELLOW' ? '#854d0e' :
-                                                        (getDerivedOcrStatus(formData) === 'RED' ? '#991b1b' :
-                                                            (getDerivedOcrStatus(formData) === 'VERIFIED' ? '#1d4ed8' : '#64748b'))),
-                                                fontWeight: 700,
-                                                fontSize: '0.9rem'
-                                            }}>
-                                                {getDerivedOcrStatus(formData) === 'GREEN' && <CheckCircle2 size={18} />}
-                                                {getDerivedOcrStatus(formData) === 'YELLOW' && <AlertCircle size={18} />}
-                                                {getDerivedOcrStatus(formData) === 'RED' && <XCircle size={18} />}
-                                                {(getDerivedOcrStatus(formData) === 'VERIFIED' || getDerivedOcrStatus(formData) === 'Sesuai (Manual)') && <CheckCircle2 size={18} />}
-
-                                                <span style={{ textTransform: 'uppercase' }}>
-                                                    {getDerivedOcrStatus(formData) === 'GREEN' ? 'SESUAI' :
-                                                        (getDerivedOcrStatus(formData) === 'YELLOW' ? 'BUTUH REVIEW' :
-                                                            (getDerivedOcrStatus(formData) === 'RED' ? 'TIDAK SESUAI' :
-                                                                ((getDerivedOcrStatus(formData) === 'VERIFIED' || getDerivedOcrStatus(formData) === 'Sesuai (Manual)') ? 'SUDAH VERIFIKASI' : '-')))}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid-2-col">
-                                {/* Left Side: Reading Inputs */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
-                                    <div className="form-group">
-                                        <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Stan Awal (Bulan Lalu)</label>
-                                        <div style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f0f9ff', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0369a1', fontSize: '0.95rem', fontWeight: 700 }}>
-                                            <HardDrive size={16} />
-                                            <span>{formData.stan_awal}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="form-row" style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Stan Akhir</label>
-                                            <input
-                                                type="number"
-                                                style={{ width: '100%', padding: '0 0.75rem', height: '48px', borderRadius: '10px', border: '1px solid #ef4444', fontSize: '1rem', background: '#fef2f2' }}
-                                                value={formData.stan_akhir}
-                                                onChange={(e) => setFormData({ ...formData, stan_akhir: e.target.value })}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem', display: 'block' }}>Pemakaian (m³)</label>
-                                            <div style={{ width: '100%', padding: '0 0.75rem', height: '48px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b', fontSize: '0.95rem', fontWeight: 800 }}>
-                                                <Droplets size={16} color="#0ea5e9" />
-                                                <span>
-                                                    {(() => {
-                                                        const akhir = Number(formData.stan_akhir || 0);
-                                                        if (akhir === 0) return "0 m³";
-                                                        return (akhir - Number(formData.stan_awal || 0)) + " m³";
-                                                    })()}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Right Side: Photos */}
-                                <div>
-                                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                                        {[
-                                            { id: 'foto', label: 'FOTO METER', preview: fotoPreview },
-                                            { id: 'foto_rumah', label: 'FOTO RUMAH', preview: fotoRumahPreview }
-                                        ].map(item => (
-                                            <div key={item.id} style={{ textAlign: 'center', flex: 1 }}>
-                                                <div
-                                                    onClick={() => item.preview && setSimplePreviewImage(item.preview)}
-                                                    style={{
-                                                        width: '100%',
-                                                        aspectRatio: '4/3',
-                                                        border: '2px solid #e2e8f0',
-                                                        borderRadius: '12px',
-                                                        position: 'relative',
-                                                        overflow: 'hidden',
-                                                        background: '#f8fafc',
-                                                        cursor: item.preview ? 'pointer' : 'default'
-                                                    }}
-                                                >
-                                                    {item.preview ? (
-                                                        <img src={item.preview && item.preview.startsWith('/') ? `${API_BASE_URL}${item.preview}` : item.preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={item.label} />
-                                                    ) : (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1' }}>
-                                                            <Camera size={24} />
-                                                            <span style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>Tidak Ada Foto</span>
-                                                        </div>
-                                                    )}
-                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', color: 'white', fontSize: '0.6rem', padding: '4px', textTransform: 'uppercase', fontWeight: 700 }}>
-                                                        {item.label}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                                <button type="button" className="btn btn-outline" style={{ padding: '0.625rem 1.5rem', borderRadius: '8px', fontWeight: 600 }} onClick={handleCloseEditModal}>Batal</button>
-                                <button type="submit" className="btn btn-primary" style={{ padding: '0.625rem 2rem', borderRadius: '8px', fontWeight: 600, boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)' }}>
-                                    Simpan Perubahan
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div >
+                    <EditRecordingForm
+                        recording={editingRecording}
+                        initialFormData={initialEditFormData}
+                        officers={officers}
+                        statusKondisiOptions={statusKondisiOptions}
+                        ocrStatusFilter={ocrStatusFilter}
+                        getCustomerInfo={getCustomerInfo}
+                        getDerivedOcrStatus={getDerivedOcrStatus}
+                        onClose={handleCloseEditModal}
+                        onSubmit={handleEditSubmit}
+                        setSimplePreviewImage={setSimplePreviewImage}
+                        API_BASE_URL={API_BASE_URL}
+                        loading={loading}
+                    />
+                </div>
             )}
 
             {/* Print Footer */}

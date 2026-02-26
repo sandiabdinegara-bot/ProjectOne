@@ -707,6 +707,7 @@ export default function RecordingManagement({ isHistory = false }) {
                 if (col.id === 'update_date') {
                     return rec.update_date ? format(new Date(rec.update_date), 'dd/MM/yyyy') : '-';
                 }
+                if (['id_sambungan', 'id_meter'].includes(col.id)) return `="${rec[col.id]}"`;
                 return rec[col.id] || '-';
             });
         });
@@ -1655,10 +1656,15 @@ export default function RecordingManagement({ isHistory = false }) {
                                                     label="Petugas"
                                                     value={formData.petugas}
                                                     onChange={(e) => setFormData({ ...formData, petugas: e.target.value })}
-                                                    options={officers
-                                                        .filter(officer => officer.status_aktif === 'Aktif')
-                                                        .map(o => ({ value: o.nama, label: o.cabang ? `Cabang ${o.cabang}` : '' }))
-                                                    }
+                                                    options={(() => {
+                                                        const uniqueNames = Array.from(new Set(officers
+                                                            .filter(o => o.status_aktif === 'Aktif')
+                                                            .map(o => o.nama)));
+                                                        return uniqueNames.map(nama => {
+                                                            const o = officers.find(off => off.nama === nama);
+                                                            return { value: nama, label: o.cabang ? `Cabang ${o.cabang}` : '' };
+                                                        });
+                                                    })()}
                                                     placeholder="Pilih Petugas"
                                                     searchPlaceholder="Cari petugas..."
                                                     disabled={!!editingRecording}
