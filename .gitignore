@@ -24,8 +24,8 @@ dist-ssr
 *.sw?
 
 # Database and environment
-# sicater_db.sql
-db_backups/
+sicater_db.sql
+.env.example
 .env
 .env.local
 node_modules/
