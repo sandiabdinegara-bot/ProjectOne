@@ -21,8 +21,16 @@ export default defineConfig({
         target: 'http://localhost/PDAM_app',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/PDAM_app/, '')
+      },
+      '/ai': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ai/, '')
       }
     }
+  },
+  preview: {
+    allowedHosts: true
   },
   build: {
     chunkSizeWarningLimit: 1600,

@@ -31,12 +31,42 @@
 
 ---
 
-## 🛠️ Alur Kerja Pengembangan
+## 📋 Persyaratan Sistem
 
-Untuk memastikan aplikasi berjalan lancar di lingkungan XAMPP:
-
-1.  **`mulai_koding.bat`**: Gunakan saat ingin menambah fitur (Mode Development).
-2.  **`jalankan_ai.bat`**: Wajib dijalankan untuk mengaktifkan fitur pembacaan foto meteran (OCR).
-3.  **`jalankan_build.bat`**: Gunakan untuk memproses kodingan menjadi aplikasi siap pakai di XAMPP (`http://localhost/PDAM_app/`).
+Sebelum menjalankan aplikasi, pastikan komputer Anda sudah terinstal:
+1.  **XAMPP**: Untuk Apache (Server) dan MySQL (Database).
+2.  **Node.js (v20+)**: Untuk menjalankan frontend React/Vite.
+3.  **Python (v3.10+)**: Untuk menjalankan fitur AI (OCR).
 
 ---
+
+## 🛠️ Cara Setup (Instalasi Pertama)
+
+1.  **Clone Repository**: Unduh kodingan dari Git.
+2.  **Frontend Dependencies**: Buka terminal di folder project, jalankan `npm install`.
+3.  **Database**:
+    - Buka **phpMyAdmin**.
+    - Buat database baru bernama `sicater_db`.
+    - Import file `sicater_db.sql` ke dalam database tersebut.
+4.  **Konfigurasi Environment**:
+    - Copy file `.env.example` menjadi `.env`.
+    - Sesuaikan `DB_USER` dan `DB_PASS` (default XAMPP biasanya `root` dan tanpa password).
+
+---
+
+## 🕹️ Cara Menjalankan
+
+### A. Mode Lokal (Development)
+1.  Jalankan Apache & MySQL di Control Panel **XAMPP**.
+2.  Klik 2x file **`jalankan_ai.bat`** (Tunggu sampai muncul *Server AI running*).
+3.  Klik 2x file **`mulai_koding.bat`** (Aplikasi akan terbuka di browser lokal).
+
+### B. Mode Presentasi (Online/Tunneling)
+Jika ingin aplikasi bisa diakses dari HP atau jaringan luar tanpa hosting:
+1.  Pastikan XAMPP dan `jalankan_ai.bat` sudah aktif.
+2.  Klik 2x file **`jalankan_online.bat`**.
+3.  Copy link **`https://...trycloudflare.com`** yang muncul di jendela hitam, lalu bagikan atau buka di device lain.
+
+---
+
+*Dikembangkan oleh @sandiabdinegara-bot*

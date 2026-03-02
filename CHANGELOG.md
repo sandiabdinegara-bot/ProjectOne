@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.4.0] - 2026-03-02
+
+### Added
+- **Functional Settings Menu (Pengaturan)**: A comprehensive control center with 6 dedicated modules:
+    - **Profil & Keamanan**: Account identity and password management.
+    - **Manajemen User**: Administrative interface for managing system users and field officers with search capabilities.
+    - **Tarif & Denda**: Configuration for progressive water rates and automatic late payment fines.
+    - **Aplikasi & Logo**: System identity settings with logo preview and update functionality.
+    - **Backup & Database**: Interactive database backup tool with process monitoring and secure download links.
+    - **Log Aktivitas**: Audit trail for tracking system-wide user actions.
+- **Sidebar Integration**: Seamlessly integrated the "Pengaturan" entry point into the main application navigation.
+
+### Changed
+- **UI Density Optimization**: Refined the layout of the Settings menu to be more compact and "dense," maximizing screen efficiency while maintaining visual consistency with existing modules like "Manajemen Operasional".
+
+## [1.3.0] - 2026-02-26
+
+### Added
+- **Premium Maintenance Modal**: Replaced browser alerts with a custom-designed "Tahap Pengembangan" modal for the Customer Report menu, featuring Lucide icons and smooth animations.
+- **Enhanced Splash Screen**: Upgraded the initial loading experience with entrance zoom, liquid border animations, and staggered loading text.
+- **Mobile UI Overhaul**: Implemented a responsive mobile header, fixed vertical scrolling on small screens, and optimized the sidebar as a fixed overlay for mobile devices.
+
+### Changed
+- **Menu Rebranding**: Renamed "Data Cabang" to **"Manajemen Operasional"** to better reflect the scope of branch management, officer mapping, and personnel data.
+- **Build Optimization**: Restored Vite development entry points in `index.html` to prevent caching issues and ensure the latest code is always loaded.
+
+### Fixed
+- **Missing Modal Labels**: Restored missing icons and "CSV/EXCEL" labels in the Performance Report and other filter modals.
+- **Mobile Layout Constraints**: Corrected CSS to allow the main content area to scroll naturally on mobile devices.
+
 ## [1.2.0] - 2026-02-23
 
 ### Added

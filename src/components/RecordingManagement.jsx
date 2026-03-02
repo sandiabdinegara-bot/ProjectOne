@@ -302,7 +302,8 @@ export default function RecordingManagement({ isHistory = false }) {
             formDataAi.append('image', imageFile);
             formDataAi.append('user_input', userInput);
 
-            const response = await fetch('http://localhost:5000/validate', {
+            const aiBaseUrl = window.location.origin;
+            const response = await fetch(`${aiBaseUrl}/ai/validate`, {
                 method: 'POST',
                 body: formDataAi
             });

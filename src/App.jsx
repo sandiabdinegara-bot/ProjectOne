@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, Droplets, BarChart2, History, FileText, X, LayoutDashboard, Settings, UserCircle, LogOut, Menu, ChevronLeft, Building, UserPlus, MapPin, ClipboardList, TrendingUp, HelpCircle, ChevronDown, FileSpreadsheet, FileDown, Table } from 'lucide-react';
+import { Building2, Users, Droplets, BarChart2, History, FileText, X, LayoutDashboard, Settings, UserCircle, LogOut, Menu, ChevronLeft, Building, UserPlus, MapPin, ClipboardList, TrendingUp, HelpCircle, ChevronDown, FileSpreadsheet, FileDown, Table, Construction } from 'lucide-react';
 import CustomerManagement from './components/CustomerManagement';
 import BranchManagement from './components/BranchManagement';
 import RecordingManagement from './components/RecordingManagement';
@@ -8,6 +8,7 @@ import OfficerMapping from './components/OfficerMapping';
 import MeterAnalysis from './components/MeterAnalysis';
 import CustomerMapping from './components/CustomerMapping';
 import Dashboard from './components/Dashboard';
+import SettingsPanel from './components/Settings';
 import SearchableSelect from './components/common/SearchableSelect';
 
 
@@ -20,6 +21,7 @@ const MemoizedOfficerManagement = React.memo(OfficerManagement);
 const MemoizedOfficerMapping = React.memo(OfficerMapping);
 const MemoizedMeterAnalysis = React.memo(MeterAnalysis);
 const MemoizedCustomerMapping = React.memo(CustomerMapping);
+const MemoizedSettings = React.memo(SettingsPanel);
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -32,6 +34,7 @@ export default function App() {
   const [showGpsReportFilter, setShowGpsReportFilter] = useState(false);
   const [showUsageSummaryFilter, setShowUsageSummaryFilter] = useState(false);
   const [showZeroUsageFilter, setShowZeroUsageFilter] = useState(false);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [filterOptions, setFilterOptions] = useState({
     kondisi: [],
     usage: [],
@@ -234,7 +237,7 @@ export default function App() {
     { id: 'pelanggan', label: 'Data Pelanggan', icon: <Users size={20} /> },
     {
       id: 'cabang_parent',
-      label: 'Data Cabang',
+      label: 'Manajemen Operasional',
       icon: <Building2 size={20} />,
       subItems: [
         { id: 'cabang', label: 'Daftar Cabang' },
@@ -259,6 +262,7 @@ export default function App() {
       ]
     },
     { id: 'history_catat', label: 'History Pencatatan', icon: <History size={20} /> },
+    { id: 'pengaturan', label: 'Pengaturan', icon: <Settings size={20} /> },
   ];
 
   const handleTabClick = (id) => {
@@ -279,7 +283,7 @@ export default function App() {
       return;
     }
     if (id === 'laporan_pelanggan_list') {
-      setShowCustomerReportFilter(true);
+      setShowMaintenanceModal(true);
       return;
     }
     if (id === 'laporan_gps_audit') {
@@ -314,16 +318,32 @@ export default function App() {
 
       {/* Mobile Header */}
       <header className="mobile-header">
-        <button className="btn-menu" onClick={() => setIsSidebarOpen(true)}>
-          <Menu size={24} />
-        </button>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <img src="logo.svg" alt="PDAM Smart" style={{ height: '50px', width: 'auto' }} />
+        <div className="mobile-header-left">
+          <button className="btn-menu" onClick={() => setIsSidebarOpen(true)}>
+            <Menu size={24} />
+          </button>
+        </div>
+
+        <div className="mobile-header-center">
+          <div className="mobile-logo-container">
+            <img src="logo-icon.svg" alt="" className="mobile-logo-icon" />
+            <span className="mobile-logo-text">PDAM SMART</span>
+          </div>
+        </div>
+
+        <div className="mobile-header-right">
+          {/* Placeholder for Profile or Other actions like in ss 1 */}
+          <button className="btn-menu">
+            <UserCircle size={24} />
+          </button>
         </div>
       </header>
 
       {/* Sidebar */}
-      <aside className={`sidebar ${isMobile ? (isSidebarOpen ? 'visible-mobile' : 'hidden-mobile') : (isSidebarOpen ? 'open' : 'closed')}`}>
+      <aside
+        className={`sidebar ${isMobile ? (isSidebarOpen ? 'visible-mobile' : 'hidden-mobile') : (isSidebarOpen ? 'open' : 'closed')}`}
+        style={isMobile && !isSidebarOpen ? { display: 'none' } : {}}
+      >
         <div className="sidebar-header" style={{ justifyContent: 'center', padding: (isSidebarOpen || isMobile) ? '2rem 1rem' : '1rem 0.5rem', transition: 'padding 0.3s ease' }}>
           <img
             src="logo.png"
@@ -438,6 +458,7 @@ export default function App() {
           {activeTab === 'analisa_review' && <MemoizedMeterAnalysis key="analisa_review" ocrStatusFilter="REVIEW" />}
           {activeTab === 'pelanggan_mapping' && <MemoizedCustomerMapping />}
           {(activeTab === 'cabang' || activeTab === 'laporan_cabang') && <MemoizedBranchManagement isReport={activeTab === 'laporan_cabang'} onReportClose={() => setActiveTab('cabang')} />}
+          {activeTab === 'pengaturan' && <MemoizedSettings />}
 
         </div>
 
@@ -629,8 +650,16 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 700, color: '#64748b', marginBottom: '0.75rem' }}>
-                    Pilih Tanggal
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem', fontWeight: 700, color: '#64748b', marginBottom: '0.75rem' }}>
+                    <span>Pilih Tanggal</span>
+                    {(selectedFilters.startDate || selectedFilters.endDate) && (
+                      <button
+                        onClick={() => setSelectedFilters({ ...selectedFilters, startDate: '', endDate: '' })}
+                        style={{ fontSize: '0.7rem', color: '#ef4444', background: '#fee2e2', border: 'none', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer' }}
+                      >
+                        Reset Tanggal
+                      </button>
+                    )}
                   </label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <div className="input-group">
@@ -669,15 +698,13 @@ export default function App() {
                 </div>
 
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem',
-                  opacity: (selectedFilters.startDate && selectedFilters.endDate) ? 0.5 : 1,
-                  pointerEvents: (selectedFilters.startDate && selectedFilters.endDate) ? 'none' : 'auto'
+                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'
                 }}>
                   <div className="form-group">
                     <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Bulan</label>
                     <select
                       value={selectedFilters.month}
-                      onChange={(e) => setSelectedFilters({ ...selectedFilters, month: e.target.value })}
+                      onChange={(e) => setSelectedFilters({ ...selectedFilters, month: e.target.value, startDate: '', endDate: '' })}
                       style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}
                     >
                       {Array.from({ length: 12 }, (_, i) => {
@@ -699,7 +726,7 @@ export default function App() {
                     <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginBottom: '0.5rem' }}>Tahun</label>
                     <select
                       value={selectedFilters.year}
-                      onChange={(e) => setSelectedFilters({ ...selectedFilters, year: e.target.value })}
+                      onChange={(e) => setSelectedFilters({ ...selectedFilters, year: e.target.value, startDate: '', endDate: '' })}
                       style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc' }}
                     >
                       {[2024, 2025, 2026].map(y => (
@@ -798,6 +825,8 @@ export default function App() {
                       e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >
+                    <FileDown size={16} />
+                    <span>CSV</span>
                   </button>
                 </div>
               </div>
@@ -921,6 +950,31 @@ export default function App() {
                   <FileText size={18} /> <span>Generate Report (PDF)</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        {/* Modal for Under Development Features */}
+        {showMaintenanceModal && (
+          <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+            <div className="modal-content" style={{ width: '400px', background: 'white', borderRadius: '16px', padding: '2.5rem 2rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: 'fadeInScale 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', textAlign: 'center' }}>
+              <div style={{ width: '80px', height: '80px', background: '#fef3c7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+                <Construction size={40} color="#d97706" />
+              </div>
+              <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b', marginBottom: '1rem' }}>Tahap Pengembangan</h3>
+              <p style={{ color: '#64748b', lineHeight: '1.6', marginBottom: '2rem' }}>
+                Fitur <strong>Laporan Pelanggan</strong> sedang dalam proses integrasi data. Mohon tunggu pembaruan selanjutnya!
+              </p>
+              <button
+                onClick={() => setShowMaintenanceModal(false)}
+                style={{
+                  width: '100%', padding: '0.875rem', borderRadius: '12px', border: 'none',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                  color: 'white', fontWeight: 600, cursor: 'pointer',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)'
+                }}
+              >
+                Mengerti
+              </button>
             </div>
           </div>
         )}
