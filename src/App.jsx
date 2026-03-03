@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Droplets, Menu, X, User, History, BarChart2, ChevronDown, LogOut,  CheckCheck, Database, ShieldAlert, ClipboardList } from 'lucide-react';
+import { Droplets, Menu, X, User, Users, History, BarChart2, ChevronDown, LogOut,  CheckCheck, Database, ShieldAlert, ClipboardList, Settings, MapPin } from 'lucide-react';
 import CustomerManagement from './components/CustomerManagement';
 import BranchManagement from './components/BranchManagement';
+import UserManagement from './components/UserManagement';
 import RecordingManagement from './components/RecordingManagement';
 import OfficerManagement from './components/OfficerManagement';
+import MeterManagement from './components/MeterManagement';
+import DesaManagement from './components/DesaManagement';
+import KecamatanManagement from './components/KecamatanManagement';
 import OfficerMapping from './components/OfficerMapping';
 import MeterAnalysis from './components/MeterAnalysis';
 import LoginPage from './components/LoginPage';
+import SettingsPage from './components/SettingsPage';
 import { AUTH_KEY, TOKEN_KEY, USER_KEY, isAuthenticated as checkAuth, clearExpiredAuth } from './auth';
 
 function logout() {
@@ -23,7 +28,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(localStorage.getItem('pdam_active_tab') || 'pelanggan');
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  const [expandedMenus, setExpandedMenus] = useState(['analisa']); // Keep analisa expanded by default or from storage
+  const [expandedMenus, setExpandedMenus] = useState(['analisa', 'master_parent', 'master_daerah_parent', 'pelanggan_parent']); // Keep analisa expanded by default or from storage
 
   useEffect(() => {
     clearExpiredAuth();
@@ -56,22 +61,44 @@ export default function App() {
       label: 'Laporan',
       icon: <ClipboardList size={20} />,
       subItems: [
-        { id: 'cabang', label: 'Laporan Produktivitas' },
-        { id: 'user', label: 'Laporan Debit Air' },
-        { id: 'petugas', label: 'Laporan Distribusi' },
+        { id: 'lap_produktivitas', label: 'Laporan Produktivitas' },
+        { id: 'lap_debit_air', label: 'Laporan Debit Air' },
+        { id: 'lap_distribusi', label: 'Laporan Distribusi' },
       ]
     },
     {
-      id: 'cabang_parent',
+      id: 'master_parent',
       label: 'Data Master',
       icon: <Database size={20} />,
       subItems: [
-        { id: 'cabang', label: 'Data Cabang' },
         { id: 'user', label: 'Data User' },
-        { id: 'petugas', label: 'Data Petugas' },
-        { id: 'pelanggan', label: 'Data Pelanggan' },
+        { id: 'cabang', label: 'Data Cabang' },
         { id: 'petugas_mapping', label: 'Data Rute' },
+        { id: 'petugas', label: 'Data Petugas' },
       ]
+    },
+    {
+      id: 'master_daerah_parent',
+      label: 'Data Master Daerah',
+      icon: <MapPin size={20} />,
+      subItems: [
+        { id: 'desa', label: 'Data Desa' },
+        { id: 'kecamatan', label: 'Data Kecamatan' },
+      ]
+    },
+    {
+      id: 'pelanggan_parent',
+      label: 'Data Pelanggan',
+      icon: <Users size={20} />,
+      subItems: [
+        { id: 'pelanggan', label: 'Data Pelanggan' },
+        { id: 'meter', label: 'Data Meter' },
+      ]
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: <Settings size={20} />,
     },
   ];
 
@@ -163,7 +190,7 @@ export default function App() {
                   onClick={() => {
                     if (hasSubItems) {
                       toggleMenu(item.id);
-                      if (item.id !== 'cabang_parent') {
+                      if (item.id !== 'master_parent' && item.id !== 'laporan_parent' && item.id !== 'master_daerah_parent' && item.id !== 'pelanggan_parent') {
                         handleTabClick(item.id);
                       }
                       if (!isSidebarOpen) setIsSidebarOpen(true);
@@ -229,9 +256,14 @@ export default function App() {
             activeTab === 'catat' ? <RecordingManagement /> :
               activeTab === 'history_catat' ? <RecordingManagement isHistory={true} /> :
                 activeTab === 'petugas' ? <OfficerManagement /> :
-                  activeTab === 'petugas_mapping' ? <OfficerMapping /> :
+                    activeTab === 'meter' ? <MeterManagement /> :
+                    activeTab === 'desa' ? <DesaManagement /> :
+                    activeTab === 'kecamatan' ? <KecamatanManagement /> :
+                    activeTab === 'petugas_mapping' ? <OfficerMapping /> :
                     (activeTab === 'analisa' || activeTab === 'analisa_all') ? <MeterAnalysis key="analisa_all" /> :
                       activeTab === 'analisa_review' ? <MeterAnalysis key="analisa_review" ocrStatusFilter="REVIEW" /> :
+                      activeTab === 'user' ? <UserManagement /> :
+                      activeTab === 'settings' ? <SettingsPage /> :
                         <BranchManagement />}
         </div>
       </main>

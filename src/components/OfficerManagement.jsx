@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Edit2, Trash2, User, X, Save, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, Users, Camera, List } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Search, Plus, Edit2, Trash2, User, X, Save, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, Users, Camera, List, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import SearchableSelect from './common/SearchableSelect';
-import * as XLSX from 'xlsx';
+import ConfirmModal from './ConfirmModal';
 import Swal from 'sweetalert2';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
-import { BASE_URL } from '../config';
+import { BASE_URL, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../config';
 import { fetchWithAuth } from '../api';
 
-const API_URL = './api/officers.php';
+const API_URL = `${BASE_URL}/petugas`;
 const API_BASE_URL = BASE_URL;
 
 const ALL_COLUMNS = [
@@ -32,12 +30,23 @@ const DEFAULT_COLUMNS = ['id', 'nik', 'ktp', 'foto_petugas', 'kode_cabang', 'nam
 
 export default function OfficerManagement() {
     const [officers, setOfficers] = useState([]);
-    const [filteredOfficers, setFilteredOfficers] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [searchInput, setSearchInput] = useState('');
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(() => {
+        const saved = localStorage.getItem('pdam_petugas_page_size');
+        return saved ? parseInt(saved, 10) : DEFAULT_PAGE_SIZE;
+    });
+    const [total, setTotal] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [exporting, setExporting] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
     const [editingOfficer, setEditingOfficer] = useState(null);
     const [previewImage, setPreviewImage] = useState(null);
+    const [notification, setNotification] = useState(null);
     const [formData, setFormData] = useState({
         nik: '', nama: '', alamat: '', telepon: '', ktp: '',
         tgl_masuk: '', tgl_keluar: '', kode_cabang: '', kode_rute: [],
@@ -46,33 +55,29 @@ export default function OfficerManagement() {
     const [branches, setBranches] = useState([]);
     const [routes, setRoutes] = useState([]);
 
-    // Route Selection Modal State
     const [isRouteSelectOpen, setIsRouteSelectOpen] = useState(false);
     const [routeSearch, setRouteSearch] = useState('');
 
-    // Feature States
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
-    const [isSearchMenuOpen, setIsSearchMenuOpen] = useState(false);
-    const [searchCategory, setSearchCategory] = useState('nama');
     const [visibleColumns, setVisibleColumns] = useState(() => {
-        const saved = localStorage.getItem('pdam_visible_columns_officers_v2');
+        const saved = localStorage.getItem('pdam_visible_columns_petugas');
         return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
     });
 
-    // Pagination State
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(10);
     const columnMenuRef = useRef(null);
-    const searchMenuRef = useRef(null);
 
     useEffect(() => {
-        fetchOfficers();
+        localStorage.setItem('pdam_visible_columns_petugas', JSON.stringify(visibleColumns));
+    }, [visibleColumns]);
+
+    useEffect(() => {
+        localStorage.setItem('pdam_petugas_page_size', String(limit));
+    }, [limit]);
+
+    useEffect(() => {
         const handleClickOutside = (event) => {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target)) {
                 setIsColumnMenuOpen(false);
-            }
-            if (searchMenuRef.current && !searchMenuRef.current.contains(event.target)) {
-                setIsSearchMenuOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -87,6 +92,11 @@ export default function OfficerManagement() {
             setRoutes([]);
         }
     }, [formData.kode_cabang]);
+
+    const showNotification = useCallback((message, type = 'success') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 3000);
+    }, []);
 
     const fetchBranches = async () => {
         try {
@@ -108,19 +118,6 @@ export default function OfficerManagement() {
             console.error('Failed to fetch routes:', err);
         }
     };
-
-    useEffect(() => {
-        const lower = searchTerm.toLowerCase();
-        const filtered = officers.filter(item => {
-            if (!searchTerm) return true;
-            if (searchCategory === 'nama') return item.nama && item.nama.toLowerCase().includes(lower);
-            if (searchCategory === 'nik') return item.nik && String(item.nik).includes(lower);
-            if (searchCategory === 'alamat') return item.alamat && item.alamat.toLowerCase().includes(lower);
-            return false;
-        });
-        setFilteredOfficers(filtered);
-        setCurrentPage(1);
-    }, [searchTerm, officers, searchCategory]);
 
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -158,19 +155,54 @@ export default function OfficerManagement() {
         }
     };
 
-    const fetchOfficers = async () => {
+    const fetchOfficers = useCallback(async (pageNum, pageLimit, search) => {
         try {
             setLoading(true);
-            const res = await fetchWithAuth(API_URL);
-            const data = await res.json();
-            setOfficers(Array.isArray(data) ? data : []);
+            const params = new URLSearchParams();
+            params.set('page', String(pageNum));
+            params.set('limit', String(pageLimit));
+            if (search && search.trim()) params.set('search', search.trim());
+            const res = await fetchWithAuth(`${API_URL}?${params.toString()}`);
+            const json = await res.json();
+            if (Array.isArray(json)) {
+                setOfficers(json);
+                setTotal(json.length);
+                setTotalPages(1);
+            } else {
+                setOfficers(json.data || []);
+                setTotal(json.total ?? 0);
+                setPage(json.page ?? pageNum);
+                setTotalPages(json.totalPages ?? (Math.ceil((json.total || 0) / pageLimit) || 1));
+            }
         } catch (err) {
             console.error('Failed to fetch officers:', err);
-            Swal.fire('Error', 'Gagal memuat data petugas', 'error');
+            showNotification('Gagal memuat data petugas', 'error');
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchOfficers(page, limit, searchTerm);
+    }, [page, limit, searchTerm, fetchOfficers]);
+
+    const applySearch = useCallback(() => {
+        const trimmed = searchInput.trim();
+        if (trimmed !== searchTerm) {
+            setSearchTerm(trimmed);
+            setPage(1);
+        }
+    }, [searchInput, searchTerm]);
+
+    const handlePageChange = useCallback((newPage) => {
+        setPage(prev => Math.max(1, Math.min(newPage, totalPages)));
+    }, [totalPages]);
+
+    const handleLimitChange = useCallback((e) => {
+        const newLimit = parseInt(e.target.value, 10);
+        setLimit(newLimit);
+        setPage(1);
+    }, []);
 
     const handleOpenModal = (officer = null) => {
         if (officer) {
@@ -207,6 +239,9 @@ export default function OfficerManagement() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const isUpdate = !!editingOfficer;
+        const url = isUpdate ? `${API_URL}/${editingOfficer.id}` : API_URL;
+        const method = isUpdate ? 'PATCH' : 'POST';
 
         const body = new FormData();
         body.append('nik', formData.nik);
@@ -217,148 +252,207 @@ export default function OfficerManagement() {
         body.append('tgl_masuk', formData.tgl_masuk);
         body.append('tgl_keluar', formData.tgl_keluar);
         body.append('kode_cabang', formData.kode_cabang);
-        body.append('kode_rute', formData.kode_rute);
+        body.append('kode_rute', Array.isArray(formData.kode_rute) ? formData.kode_rute.join(',') : (formData.kode_rute || ''));
         body.append('status_aktif', formData.status_aktif);
-
-        // If there's an existing photo string (URL) and no new file, we can send it as is, or backend will ignore it if we send nothing and logic handles it.
-        // But cleaner is to send existing photo path if we are not replacing it.
         if (editingOfficer?.selectedFile) {
             body.append('foto_petugas', editingOfficer.selectedFile);
         } else {
-            // Keep existing path if any
             body.append('foto_petugas', formData.foto_petugas || '');
         }
 
-        const url = editingOfficer && editingOfficer.id ? `${API_URL}?id=${editingOfficer.id}` : API_URL;
-
         try {
             setLoading(true);
-            const res = await fetchWithAuth(url, {
-                method: 'POST',
-                body: body // Fetch sets Content-Type to multipart/form-data automatically
-            });
-            const data = await res.json();
-            if (data.message) {
-                Swal.fire('Sukses', editingOfficer ? 'Data petugas diperbarui' : 'Data petugas ditambahkan', 'success');
-                setIsModalOpen(false);
-                fetchOfficers();
-            } else {
-                throw new Error(data.error || 'Gagal menyimpan');
+            const res = await fetchWithAuth(url, { method, body });
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 401) {
+                showNotification('Token tidak valid atau kedaluwarsa', 'error');
+                return;
+            }
+            if (res.status === 201 || res.status === 200) {
+                fetchOfficers(page, limit, searchTerm);
+                handleCloseModal();
+                showNotification(isUpdate ? 'Petugas berhasil diperbarui' : 'Petugas berhasil ditambahkan');
+            } else if (data.error) {
+                showNotification(data.error, 'error');
             }
         } catch (err) {
             console.error(err);
-            Swal.fire('Error', 'Gagal menyimpan data petugas', 'error');
+            showNotification('Gagal menyimpan data petugas', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDelete = async (id) => {
-        const result = await Swal.fire({
-            title: 'Hapus Petugas?',
-            text: "Data yang dihapus tidak dapat dikembalikan!",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Ya, Hapus!',
-            cancelButtonText: 'Batal',
-            confirmButtonColor: '#ef4444'
-        });
+    const handleDeleteClick = (id) => {
+        setDeletingId(id);
+        setIsConfirmOpen(true);
+    };
 
-        if (result.isConfirmed) {
-            try {
-                const res = await fetchWithAuth(`${API_URL}?id=${id}`, { method: 'DELETE' });
-                const data = await res.json();
-                if (data.message) {
-                    Swal.fire('Terhapus!', 'Data petugas telah dihapus.', 'success');
-                    fetchOfficers();
-                } else {
-                    throw new Error(data.error);
-                }
-            } catch (err) {
-                Swal.fire('Gagal!', err.message, 'error');
+    const handleConfirmDelete = async () => {
+        try {
+            const res = await fetchWithAuth(`${API_URL}/${deletingId}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 401) {
+                showNotification('Token tidak valid atau kedaluwarsa', 'error');
+                return;
             }
+            if (res.status === 404) {
+                showNotification('Data petugas tidak ditemukan', 'error');
+                setIsConfirmOpen(false);
+                setDeletingId(null);
+                fetchOfficers(page, limit, searchTerm);
+                return;
+            }
+            if (res.status === 200) {
+                setIsConfirmOpen(false);
+                setDeletingId(null);
+                fetchOfficers(page, limit, searchTerm);
+                showNotification('Petugas berhasil dihapus');
+            } else {
+                showNotification(data.error || 'Gagal menghapus petugas', 'error');
+            }
+        } catch (err) {
+            console.error('Delete failed:', err);
+            showNotification('Terjadi kesalahan sistem', 'error');
         }
     };
 
-    // Export Functions
-    const exportToCSV = () => {
-        const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_petugas');
-        const headers = visibleCols.map(c => c.label);
-        const rows = filteredOfficers.map(item => visibleCols.map(c => item[c.id] || '-'));
+    const buildExportParams = useCallback((format) => {
+        const params = new URLSearchParams();
+        params.set('format', format);
+        if (searchTerm && searchTerm.trim()) params.set('search', searchTerm.trim());
+        const cols = visibleColumns.filter(c => c !== 'foto_petugas');
+        if (cols.length) params.set('columns', cols.join(','));
+        return params.toString();
+    }, [searchTerm, visibleColumns]);
 
-        const csvContent = [headers, ...rows].map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `data_petugas_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const exportToCSV = async () => {
+        try {
+            setExporting(true);
+            const qs = buildExportParams('csv');
+            const res = await fetchWithAuth(`${API_URL}/export?${qs}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `data_petugas_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+            showNotification('Export CSV berhasil');
+        } catch (err) {
+            console.error('Export CSV failed:', err);
+            showNotification('Gagal export CSV', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
 
-    const exportToExcel = () => {
-        const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_petugas');
-        const data = filteredOfficers.map(item => {
-            const row = {};
-            visibleCols.forEach(col => {
-                row[col.label] = item[col.id] || '-';
-            });
-            return row;
-        });
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Petugas");
-        XLSX.writeFile(wb, `data_petugas_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const exportToExcel = async () => {
+        try {
+            setExporting(true);
+            const qs = buildExportParams('xlsx');
+            const res = await fetchWithAuth(`${API_URL}/export?${qs}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `data_petugas_${new Date().toISOString().split('T')[0]}.xlsx`;
+            link.click();
+            URL.revokeObjectURL(url);
+            showNotification('Export Excel berhasil');
+        } catch (err) {
+            console.error('Export Excel failed:', err);
+            showNotification('Gagal export Excel', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
 
-    const exportToPDF = () => {
-        const doc = new jsPDF('l', 'mm', 'a4');
-        const now = new Date().toLocaleString('id-ID');
-        const visibleCols = ALL_COLUMNS.filter(col => visibleColumns.includes(col.id) && col.id !== 'foto_petugas');
-
-        doc.setFontSize(18);
-        doc.setTextColor(14, 165, 233);
-        doc.text("Laporan Data Petugas PDAM", 14, 15);
-        doc.setFontSize(10);
-        doc.setTextColor(100);
-        doc.text(`Jumlah Total: ${filteredOfficers.length} Petugas`, 14, 22);
-        doc.text(`Waktu Cetak: ${now}`, 280, 22, { align: 'right' });
-
-        const tableColumn = ["No", ...visibleCols.map(c => c.label)];
-        const tableRows = filteredOfficers.map((item, i) => [
-            i + 1,
-            ...visibleCols.map(c => item[c.id] || '-')
-        ]);
-
-        autoTable(doc, {
-            startY: 28,
-            head: [tableColumn],
-            body: tableRows,
-            theme: 'grid',
-            headStyles: { fillColor: [241, 245, 249], textColor: [100, 116, 139], fontStyle: 'bold' },
-            styles: { fontSize: 8 }
-        });
-        doc.save(`data_petugas_${new Date().toISOString().split('T')[0]}.pdf`);
+    const exportToPDF = async () => {
+        try {
+            setExporting(true);
+            const qs = buildExportParams('pdf');
+            const res = await fetchWithAuth(`${API_URL}/export?${qs}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `data_petugas_${new Date().toISOString().split('T')[0]}.pdf`;
+            link.click();
+            URL.revokeObjectURL(url);
+            showNotification('Export PDF berhasil');
+        } catch (err) {
+            console.error('Export PDF failed:', err);
+            showNotification('Gagal export PDF', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
 
-    const handlePrint = () => {
-        window.print();
+    const handlePrint = async () => {
+        try {
+            setExporting(true);
+            const params = new URLSearchParams();
+            params.set('print', '1');
+            if (searchTerm && searchTerm.trim()) params.set('search', searchTerm.trim());
+            const res = await fetchWithAuth(`${API_URL}/export?format=pdf&${params.toString()}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const w = window.open(url, '_blank');
+            if (w) w.onload = () => { w.print(); };
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Print failed:', err);
+            showNotification('Gagal memuat dokumen untuk cetak', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
-
-    // Pagination Logic
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = filteredOfficers.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(filteredOfficers.length / itemsPerPage);
 
     return (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+            {notification && (
+                <div style={{
+                    position: 'fixed',
+                    top: '2rem',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '1rem 1.5rem',
+                    borderRadius: '10px',
+                    background: notification.type === 'success' ? '#10b981' : '#ef4444',
+                    color: 'white',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                    animation: 'slideDown 0.3s ease-out'
+                }}>
+                    {notification.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+                    <span style={{ fontWeight: 500 }}>{notification.message}</span>
+                </div>
+            )}
+
             <style>
                 {`
                     @keyframes fadeIn {
                         from { opacity: 0; transform: translateY(10px); }
                         to { opacity: 1; transform: translateY(0); }
+                    }
+                    @keyframes slideDown {
+                        from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
+                        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+                    }
+                    .animate-spin {
+                        animation: spin 1s linear infinite;
+                    }
+                    @keyframes spin {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
                     }
                     .customer-table {
                         width: 100%;
@@ -506,16 +600,16 @@ export default function OfficerManagement() {
                 </div>
                 <div className="header-actions no-print" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn btn-outline" onClick={exportToCSV} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
-                            <Download size={18} />
+                        <button className="btn btn-outline" onClick={exportToCSV} disabled={exporting} title="Export CSV" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                            {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
                         </button>
-                        <button className="btn btn-outline" onClick={exportToExcel} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                        <button className="btn btn-outline" onClick={exportToExcel} disabled={exporting} title="Export Excel" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
                             <FileSpreadsheet size={18} />
                         </button>
-                        <button className="btn btn-outline" onClick={exportToPDF} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                        <button className="btn btn-outline" onClick={exportToPDF} disabled={exporting} title="Export PDF" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
                             <FileText size={18} />
                         </button>
-                        <button className="btn btn-outline" onClick={handlePrint} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
+                        <button className="btn btn-outline" onClick={handlePrint} disabled={exporting} title="Print" style={{ height: '42px', width: '42px', padding: 0, borderRadius: '8px' }}>
                             <Printer size={18} />
                         </button>
                     </div>
@@ -589,62 +683,21 @@ export default function OfficerManagement() {
                             )}
                         </div>
 
-                        {/* Search Filter */}
-                        <div style={{ position: 'relative' }} ref={searchMenuRef}>
-                            <button className="btn btn-outline" onClick={() => setIsSearchMenuOpen(!isSearchMenuOpen)}
-                                style={{
-                                    height: '42px', padding: '0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.625rem',
-                                    background: isSearchMenuOpen ? '#f1f5f9' : '#f8fafc',
-                                    border: `1px solid ${isSearchMenuOpen ? 'var(--primary)' : 'var(--border)'}`,
-                                    color: isSearchMenuOpen ? 'var(--primary)' : 'var(--text)', borderRadius: '8px', minWidth: '100px',
-                                    fontWeight: 600
-                                }}>
-                                <span>Filter</span>
-                                <ChevronDown size={16} />
+                        {/* Search */}
+                        <div style={{ position: 'relative', flex: '0 1 350px', display: 'flex', gap: '0.5rem' }}>
+                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)', pointerEvents: 'none' }} />
+                            <input
+                                style={{ paddingLeft: '2.5rem', paddingRight: '0.625rem', height: '42px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem', width: '100%', background: '#f8fafc' }}
+                                placeholder="Cari nama, NIK, alamat, cabang..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && applySearch()}
+                            />
+                            <button type="button" className="btn btn-primary" onClick={applySearch} style={{ height: '42px', padding: '0 1rem', borderRadius: '8px', whiteSpace: 'nowrap' }}>
+                                Cari
                             </button>
-                            {isSearchMenuOpen && (
-                                <div style={{
-                                    position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 1000, background: 'white',
-                                    border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 12px 30px rgba(0,0,0,0.12)', padding: '0.5rem', minWidth: '200px'
-                                }}>
-                                    {[
-                                        { id: 'nama', label: 'By Nama' },
-                                        { id: 'nik', label: 'By NIK' },
-                                        { id: 'alamat', label: 'By Alamat' },
-                                        { id: 'kode_cabang', label: 'By Cabang' },
-                                        { id: 'kode_rute', label: 'By Rute' },
-                                        { id: 'telepon', label: 'By No. Telepon' },
-                                        { id: 'tgl_masuk', label: 'By Tanggal Masuk' },
-                                        { id: 'tgl_keluar', label: 'By Tanggal Keluar' },
-                                        { id: 'status_aktif', label: 'By Status' }
-                                    ].map(opt => (
-                                        <button key={opt.id} onClick={() => { setSearchCategory(opt.id); setIsSearchMenuOpen(false); }}
-                                            style={{ width: '100%', textAlign: 'left', padding: '0.75rem 1rem', border: 'none', background: searchCategory === opt.id ? '#f1f5f9' : 'none', color: searchCategory === opt.id ? 'var(--primary)' : 'var(--text)', borderRadius: '8px', cursor: 'pointer' }}>
-                                            {opt.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Search Input */}
-                        <div style={{ position: 'relative', flex: '0 1 350px' }}>
-                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
-                            <input style={{ paddingLeft: '2.5rem', paddingRight: searchTerm ? '2.5rem' : '0.625rem', height: '42px', borderRadius: '8px', border: '1px solid var(--border)', background: '#f8fafc', width: '100%' }}
-                                placeholder={`Cari ${searchCategory === 'nama' ? 'Nama' : searchCategory === 'nik' ? 'NIK' : 'Alamat'}...`}
-                                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                            {searchTerm && <button onClick={() => setSearchTerm('')} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)' }}><X size={16} /></button>}
                         </div>
                     </div>
-
-                    {/* Pagination Info */}
-                    {!loading && filteredOfficers.length > 0 && (
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <button className="btn btn-outline" style={{ height: '32px', width: '32px', padding: 0, borderRadius: '6px' }} disabled={currentPage === 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}><ChevronLeft size={16} /></button>
-                            <span style={{ fontSize: '0.875rem' }}>Halaman <strong>{currentPage}</strong> dari {totalPages}</span>
-                            <button className="btn btn-outline" style={{ height: '32px', width: '32px', padding: 0, borderRadius: '6px' }} disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}><ChevronRight size={16} /></button>
-                        </div>
-                    )}
                 </div>
 
                 <div className="table-container" style={{ maxHeight: 'calc(100vh - 350px)', overflowY: 'auto', margin: '1rem -1rem 0', width: 'calc(100% + 2rem)' }}>
@@ -717,12 +770,12 @@ export default function OfficerManagement() {
                         <tbody>
                             {loading ? (
                                 <tr><td colSpan={visibleColumns.length + 2} style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>Memuat data...</td></tr>
-                            ) : currentItems.length === 0 ? (
-                                <tr><td colSpan={visibleColumns.length + 2} style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>Tidak ada data ditemukan</td></tr>
+                            ) : officers.length === 0 ? (
+                                <tr><td colSpan={visibleColumns.length + 2} style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>{searchTerm ? `Tidak ditemukan hasil untuk "${searchTerm}"` : 'Tidak ada data petugas.'}</td></tr>
                             ) : (
-                                currentItems.map((item, index) => (
+                                officers.map((item, index) => (
                                     <tr key={item.id}>
-                                        <td className="sticky-col-left" style={{ textAlign: 'center', fontWeight: 500, color: '#64748b', padding: '12px 16px' }}>{index + 1 + (currentPage - 1) * itemsPerPage}</td>
+                                        <td className="sticky-col-left" style={{ textAlign: 'center', fontWeight: 500, color: '#64748b', padding: '12px 16px' }}>{(page - 1) * limit + index + 1}</td>
                                         {visibleColumns.map(colId => {
                                             const cellPadding = '12px 16px';
 
@@ -777,7 +830,7 @@ export default function OfficerManagement() {
                                         <td className="no-print sticky-col-right" style={{ textAlign: 'center', background: 'inherit', padding: '0.625rem 0.75rem' }}>
                                             <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
                                                 <button className="btn btn-outline" style={{ padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px' }} onClick={() => handleOpenModal(item)} title="Edit"><Edit2 size={14} /></button>
-                                                <button className="btn btn-outline" style={{ padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px', color: '#ef4444' }} onClick={() => handleDelete(item.id)} title="Hapus"><Trash2 size={14} /></button>
+                                                <button className="btn btn-outline" style={{ padding: '0.25rem', width: '28px', height: '28px', borderRadius: '6px', color: '#ef4444' }} onClick={() => handleDeleteClick(item.id)} title="Hapus"><Trash2 size={14} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -786,6 +839,45 @@ export default function OfficerManagement() {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination - page size option always shown */}
+                {!loading && (
+                    <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '1rem',
+                        marginTop: '1rem',
+                        paddingTop: '1rem',
+                        borderTop: '1px solid var(--border)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>Tampilkan</span>
+                            <select
+                                value={limit}
+                                onChange={handleLimitChange}
+                                style={{ padding: '0.375rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.875rem', background: '#fff' }}
+                            >
+                                {PAGE_SIZE_OPTIONS.map(n => (
+                                    <option key={n} value={n}>{n}</option>
+                                ))}
+                            </select>
+                            <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>
+                                per halaman. Total: <strong style={{ color: 'var(--text)' }}>{total}</strong> petugas
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <button type="button" className="btn btn-outline" disabled={page <= 1} onClick={() => handlePageChange(page - 1)} style={{ padding: '0.5rem', borderRadius: '6px', minWidth: '36px' }}>
+                                <ChevronLeft size={18} />
+                            </button>
+                            <span style={{ padding: '0 0.75rem', fontSize: '0.875rem', fontWeight: 500 }}>Halaman {page} dari {totalPages || 1}</span>
+                            <button type="button" className="btn btn-outline" disabled={page >= totalPages} onClick={() => handlePageChange(page + 1)} style={{ padding: '0.5rem', borderRadius: '6px', minWidth: '36px' }}>
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Image Preview Modal */}
@@ -854,7 +946,7 @@ export default function OfficerManagement() {
                                                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}>
 
                                                 <input id="foto-upload" type="file" accept="image/*" style={{ display: 'none' }}
-                                                    onChange={(e) => handleFileChange(e, 'foto')}
+                                                    onChange={handleFileChange}
                                                 />
 
                                                 {formData.foto_petugas ? (
@@ -1121,6 +1213,15 @@ export default function OfficerManagement() {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={isConfirmOpen}
+                onClose={() => setIsConfirmOpen(false)}
+                onConfirm={handleConfirmDelete}
+                title="Hapus Petugas?"
+                message="Tindakan ini tidak dapat dibatalkan. Data petugas dan wilayah yang terkait mungkin terdampak."
+                type="danger"
+            />
 
             {/* CSS for route checkbox items */}
             <style dangerouslySetInnerHTML={{

@@ -570,7 +570,6 @@ export default function BranchManagement() {
                         <table style={{ width: '100%', minWidth: '600px' }}>
                             <thead>
                                 <tr>
-                                    <th style={{ width: '60px', padding: '0.625rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>NO</th>
                                     {visibleColumns.includes('kode_cabang') && <th style={{ width: '130px', padding: '0.625rem 0.75rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Kode Cabang</th>}
                                     {visibleColumns.includes('cabang') && <th style={{ padding: '0.625rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nama Cabang</th>}
                                     {visibleColumns.includes('alamat') && <th style={{ padding: '0.625rem 0.75rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Alamat</th>}
@@ -581,7 +580,6 @@ export default function BranchManagement() {
                             <tbody>
                                 {branches.length > 0 ? branches.map((branch, index) => (
                                     <tr key={branch.id} style={{ transition: 'background-color 0.2s' }}>
-                                        <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', fontWeight: 500, color: '#64748b', fontSize: '0.875rem' }}>{(page - 1) * limit + index + 1}</td>
                                         {visibleColumns.includes('kode_cabang') && (
                                             <td style={{ padding: '0.625rem 0.75rem', fontWeight: 600, color: 'var(--text)', textAlign: 'center' }}>
                                                 <span style={{ background: '#f1f5f9', color: '#1e293b', padding: '0.2rem 0.625rem', borderRadius: '4px', fontSize: '0.8125rem', border: '1px solid #e2e8f0' }}>
@@ -636,7 +634,7 @@ export default function BranchManagement() {
                                     </tr>
                                 )) : (
                                     <tr>
-                                        <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', padding: '5rem 0' }}>
+                                        <td colSpan={visibleColumns.length + 1} style={{ textAlign: 'center', padding: '5rem 0' }}>
                                             <div style={{ opacity: 0.5, marginBottom: '1rem' }}>
                                                 <Building2 size={64} style={{ margin: '0 auto' }} />
                                             </div>
@@ -758,8 +756,10 @@ export default function BranchManagement() {
                                         style={{ height: '48px', borderRadius: '8px' }}
                                         value={formData.kode_cabang}
                                         onChange={e => setFormData({ ...formData, kode_cabang: e.target.value })}
+                                        readOnly={!!editingBranch}
+                                        disabled={!!editingBranch}
                                     />
-                                    <small style={{ color: 'var(--text-light)', marginTop: '0.25rem', display: 'block' }}>Maksimal 3 karakter</small>
+                                    <small style={{ color: 'var(--text-light)', marginTop: '0.25rem', display: 'block' }}>Maksimal 3 karakter{editingBranch ? ' (tidak dapat diubah)' : ''}</small>
                                 </div>
                                 <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                                     <label style={{ fontWeight: 600, color: 'var(--text)', marginBottom: '0.5rem' }}>Nama Cabang</label>

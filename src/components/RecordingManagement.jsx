@@ -15,7 +15,7 @@ import Swal from 'sweetalert2';
 import { BASE_URL } from '../config';
 import { fetchWithAuth } from '../api';
 
-const CUSTOMER_API = './api/customers.php';
+const CUSTOMER_API = `${BASE_URL}/pelanggan`;
 const API_BASE_URL = BASE_URL;
 const API_URL = `${BASE_URL}/pencatatan`;
 
@@ -124,9 +124,9 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const fetchOfficers = async () => {
         try {
-            const res = await fetchWithAuth('./api/officers.php');
-            const data = await res.json();
-            setOfficers(Array.isArray(data) ? data : []);
+            const res = await fetchWithAuth(`${BASE_URL}/petugas`);
+            const json = await res.json();
+            setOfficers(Array.isArray(json) ? json : (json.data || []));
         } catch (err) {
             console.error('Failed to fetch officers:', err);
         }
@@ -134,9 +134,9 @@ export default function RecordingManagement({ isHistory = false }) {
 
     const fetchStatusKondisi = async () => {
         try {
-            const res = await fetchWithAuth('./api/options.php?type=status_kondisi');
-            const data = await res.json();
-            setStatusKondisiOptions(Array.isArray(data) ? data : []);
+            const res = await fetchWithAuth(`${BASE_URL}/status-kondisi`);
+            const json = await res.json();
+            setStatusKondisiOptions(Array.isArray(json) ? json : (json.data || []));
         } catch (err) {
             console.error('Failed to fetch status kondisi:', err);
         }
@@ -145,9 +145,18 @@ export default function RecordingManagement({ isHistory = false }) {
     const fetchRecordings = async () => {
         try {
             setLoading(true);
+
+            // Align response handling with UserManagement.jsx
             const res = await fetchWithAuth(API_URL);
-            const data = await res.json();
-            setRecordings(Array.isArray(data) ? data : []);
+            const json = await res.json();
+
+            if (Array.isArray(json)) {
+                // Backward-compat for old API that returns plain array
+                setRecordings(json);
+            } else {
+                // New paginated API shape: { data, total, page, totalPages, ... }
+                setRecordings(json.data || []);
+            }
         } catch (err) {
             console.error('Failed to fetch recordings:', err);
         } finally {
@@ -158,8 +167,8 @@ export default function RecordingManagement({ isHistory = false }) {
     const fetchCustomers = async () => {
         try {
             const res = await fetchWithAuth(CUSTOMER_API);
-            const data = await res.json();
-            setCustomers(Array.isArray(data) ? data : []);
+            const json = await res.json();
+            setCustomers(Array.isArray(json) ? json : (json.data || []));
         } catch (err) {
             console.error('Failed to fetch customers:', err);
         }
@@ -273,9 +282,12 @@ export default function RecordingManagement({ isHistory = false }) {
         const officer = officers.find(o => o.nama === officerName);
         if (officer) {
             try {
-                const res = await fetchWithAuth(`./api/customers.php?officer_id=${officer.id}`);
-                const data = await res.json();
-                setFilteredCustomersForForm(Array.isArray(data) ? data : []);
+                const params = new URLSearchParams();
+                params.set('petugas_id', String(officer.id));
+                const res = await fetchWithAuth(`${CUSTOMER_API}?${params.toString()}`);
+                const json = await res.json();
+                const list = Array.isArray(json) ? json : (json.data || []);
+                setFilteredCustomersForForm(list);
             } catch (err) {
                 console.error('Failed to filter customers by officer:', err);
                 setFilteredCustomersForForm(customers);
@@ -317,13 +329,16 @@ export default function RecordingManagement({ isHistory = false }) {
             // Fetch officers for this customer's route
             if (customer.kode_rute) {
                 try {
-                    const res = await fetchWithAuth(`./api/officers.php?route_code=${customer.kode_rute}`);
-                    const data = await res.json();
-                    setOfficers(Array.isArray(data) ? data : []);
+                    const params = new URLSearchParams();
+                    params.set('kode_rute', customer.kode_rute);
+                    const res = await fetchWithAuth(`${BASE_URL}/petugas?${params.toString()}`);
+                    const json = await res.json();
+                    const list = Array.isArray(json) ? json : (json.data || []);
+                    setOfficers(list);
 
                     // If only one officer, auto-select
-                    if (Array.isArray(data) && data.length === 1) {
-                        setFormData(prev => ({ ...prev, petugas: data[0].nama }));
+                    if (list.length === 1) {
+                        setFormData(prev => ({ ...prev, petugas: list[0].nama }));
                     }
                 } catch (err) {
                     console.error('Failed to fetch officers for route:', err);
@@ -349,15 +364,18 @@ export default function RecordingManagement({ isHistory = false }) {
             const customer = customers.find(c => c.id == recording.id_pelanggan);
             if (customer && customer.kode_rute) {
                 try {
-                    const res = await fetchWithAuth(`./api/officers.php?route_code=${customer.kode_rute}`);
-                    const data = await res.json();
-                    let filteredOfficers = Array.isArray(data) ? data : [];
+                    const params = new URLSearchParams();
+                    params.set('kode_rute', customer.kode_rute);
+                    const res = await fetchWithAuth(`${BASE_URL}/petugas?${params.toString()}`);
+                    const json = await res.json();
+                    let filteredOfficers = Array.isArray(json) ? json : (json.data || []);
 
                     // Ensure the original officer is in the list even if they don't match the route assignment
                     if (recording.petugas && !filteredOfficers.some(o => o.nama === recording.petugas)) {
-                        const allRes = await fetchWithAuth('./api/officers.php');
-                        const allData = await allRes.json();
-                        const originalOfficer = (allData || []).find(o => o.nama === recording.petugas);
+                        const allRes = await fetchWithAuth(`${BASE_URL}/petugas`);
+                        const allJson = await allRes.json();
+                        const allData = Array.isArray(allJson) ? allJson : (allJson.data || []);
+                        const originalOfficer = allData.find(o => o.nama === recording.petugas);
                         if (originalOfficer) filteredOfficers.push(originalOfficer);
                     }
 
