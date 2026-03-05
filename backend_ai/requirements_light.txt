@@ -1,0 +1,7 @@
+flask
+flask-cors
+opencv-python-headless
+numpy
+easyocr --no-deps
+# Note: EasyOCR without deps might still be heavy, 
+# but this is a reminder of the dependency weight.

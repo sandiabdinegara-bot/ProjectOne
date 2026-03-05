@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: sicater-ocr
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    region: singapore # Choose closest to user's region
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
