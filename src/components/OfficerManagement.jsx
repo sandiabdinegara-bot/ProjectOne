@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SimpleImageViewer from './common/SimpleImageViewer';
+import LazyImage from './common/LazyImage';
 import { Search, Plus, Edit2, Trash2, User, X, Save, Download, FileSpreadsheet, FileText, Printer, SlidersHorizontal, ChevronDown, Users, Camera, List, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Filter, Building2 } from 'lucide-react';
 import SearchableSelect from './common/SearchableSelect';
 import Pagination from './common/Pagination';
@@ -706,7 +707,8 @@ export default function OfficerManagement({ isReport = false, onReportClose, use
                                         padding: '0.75rem',
                                         width: '200px',
                                         zIndex: 1200,
-                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
+                                        maxHeight: '400px', overflowY: 'auto'
                                     }}>
                                         <div style={{ paddingBottom: '0.5rem', borderBottom: '1px solid #334155', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                                             Tampilkan Kolom
@@ -867,7 +869,7 @@ export default function OfficerManagement({ isReport = false, onReportClose, use
                                                 position: 'absolute', top: 'calc(100% + 8px)', left: 0,
                                                 background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
                                                 boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-                                                padding: '1.25rem', zIndex: 100, minWidth: '240px'
+                                                padding: '1.25rem', zIndex: 100, minWidth: '240px', maxHeight: '400px', overflowY: 'auto'
                                             }}>
                                                 <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>
                                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem' }}>
@@ -1037,7 +1039,7 @@ export default function OfficerManagement({ isReport = false, onReportClose, use
                                                 {visibleColumns.includes('foto_petugas') && (
                                                     <td style={{ textAlign: 'center', borderRight: isReport ? '1px solid #e2e8f0' : 'none' }}>
                                                         {officer.foto_petugas ? (
-                                                            <img
+                                                            <LazyImage
                                                                 src={officer.foto_petugas.startsWith('/') ? `${IMAGE_BASE_URL}${officer.foto_petugas}` : officer.foto_petugas}
                                                                 alt="Foto"
                                                                 style={{
@@ -1164,7 +1166,7 @@ export default function OfficerManagement({ isReport = false, onReportClose, use
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center'
                                             }}>
                                                 {formData.foto_petugas ? (
-                                                    <img
+                                                    <LazyImage
                                                         src={formData.foto_petugas.startsWith('data:') || formData.foto_petugas.startsWith('blob:') ? formData.foto_petugas : (formData.foto_petugas.startsWith('/') ? `${IMAGE_BASE_URL}${formData.foto_petugas}` : formData.foto_petugas)}
                                                         alt="Preview"
                                                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}

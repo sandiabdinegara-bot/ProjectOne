@@ -81,6 +81,6 @@ try {
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 } catch (PDOException $exception) {
-    sendError("Gagal menyambung ke database. Pastikan XAMPP (MySQL) sudah aktif.", $exception->getMessage());
+    sendError("Gagal menyambung ke database.", $exception->getMessage());
 }
 ?>

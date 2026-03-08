@@ -62,3 +62,21 @@ h4,
 ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
 }
+
+/* Lazy Loading & Skeleton Styles */
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* Global Print Overrides for Lazy Images */
+@media print {
+    .lazy-image-container img {
+        opacity: 1 !important;
+        display: block !important;
+        visibility: visible !important;
+    }
+    .skeleton-overlay {
+        display: none !important;
+    }
+}

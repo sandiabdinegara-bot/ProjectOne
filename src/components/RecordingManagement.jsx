@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import SimpleImageViewer from './common/SimpleImageViewer';
+import LazyImage from './common/LazyImage';
 import { Plus, Search, Edit2, Trash2, Droplets, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileSpreadsheet, FileText, Printer, X, User, Camera, Upload, SlidersHorizontal, ChevronDown, Calendar, HardDrive, MapPin, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import SearchableSelect from './common/SearchableSelect';
 import CustomDatePicker from './common/CustomDatePicker';
@@ -1090,7 +1091,7 @@ export default function RecordingManagement({ isHistory = false, user, canDo = (
                                 <div style={{
                                     position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 1000, background: 'white',
                                     border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-                                    padding: '1.25rem', minWidth: '240px', maxHeight: '450px', overflowY: 'auto'
+                                    padding: '1.25rem', minWidth: '240px', maxHeight: '400px', overflowY: 'auto'
                                 }}>
                                     <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem' }}>
@@ -1297,7 +1298,7 @@ export default function RecordingManagement({ isHistory = false, user, canDo = (
                                                     <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', border: '1px solid #e2e8f0', color: '#94a3b8', overflow: 'hidden', cursor: rec.foto ? 'pointer' : 'default' }}
                                                         onClick={() => rec.foto && setPreviewImage(rec.foto)}
                                                         title={rec.foto ? 'Klik untuk memperbesar' : 'Tidak ada foto'}>
-                                                        {rec.foto ? <img src={rec.foto.startsWith('/') ? `${IMAGE_BASE_URL}${rec.foto}` : rec.foto} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={16} />}
+                                                        {rec.foto ? <LazyImage src={rec.foto.startsWith('/') ? `${IMAGE_BASE_URL}${rec.foto}` : rec.foto} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={16} />}
                                                     </div>
                                                 </td>
                                             )}
@@ -1306,7 +1307,7 @@ export default function RecordingManagement({ isHistory = false, user, canDo = (
                                                     <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', border: '1px solid #e2e8f0', color: '#94a3b8', overflow: 'hidden', cursor: rec.foto_rumah ? 'pointer' : 'default' }}
                                                         onClick={() => rec.foto_rumah && setPreviewImage(rec.foto_rumah)}
                                                         title={rec.foto_rumah ? 'Klik untuk memperbesar' : 'Tidak ada foto'}>
-                                                        {rec.foto_rumah ? <img src={rec.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${rec.foto_rumah}` : rec.foto_rumah} alt="Foto Rumah" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={16} />}
+                                                        {rec.foto_rumah ? <LazyImage src={rec.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${rec.foto_rumah}` : rec.foto_rumah} alt="Foto Rumah" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={16} />}
                                                     </div>
                                                 </td>
                                             )}
@@ -1758,7 +1759,7 @@ export default function RecordingManagement({ isHistory = false, user, canDo = (
                                                         opacity: editingRecording ? 0.8 : 1
                                                     }}>
                                                         {item.preview ? (
-                                                            <img src={item.preview && item.preview.startsWith('/') ? `${IMAGE_BASE_URL}${item.preview}` : item.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: editingRecording ? 'grayscale(20%)' : 'none' }} alt="Preview" />
+                                                            <LazyImage src={item.preview && item.preview.startsWith('/') ? `${IMAGE_BASE_URL}${item.preview}` : item.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: editingRecording ? 'grayscale(20%)' : 'none' }} alt="Preview" />
                                                         ) : (
                                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
                                                                 <Camera size={24} />

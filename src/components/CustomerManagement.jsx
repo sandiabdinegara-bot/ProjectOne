@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import Viewer from 'react-viewer';
 import SimpleImageViewer from './common/SimpleImageViewer';
+import LazyImage from './common/LazyImage';
 import useImageRotator from '../hooks/useImageRotator';
 import { IMAGE_BASE_URL } from '../config';
 
@@ -831,7 +832,7 @@ export default function CustomerManagement({ user, canDo = () => true }) {
                                         boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
                                         padding: '1.25rem',
                                         minWidth: '240px',
-                                        maxHeight: '450px',
+                                        maxHeight: '400px',
                                         overflowY: 'auto',
                                         animation: 'fadeIn 0.2s ease-out'
                                     }}>
@@ -1184,11 +1185,10 @@ export default function CustomerManagement({ user, canDo = () => true }) {
                                                         title={customer.foto_rumah ? 'Klik untuk memperbesar' : 'Tidak ada foto rumah'}
                                                     >
                                                         {customer.foto_rumah ? (
-                                                            <img
+                                                            <LazyImage
                                                                 src={customer.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${customer.foto_rumah}` : customer.foto_rumah}
                                                                 alt="Foto Rumah"
                                                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                onError={(e) => console.error("Image load failed for:", e.target.src)}
                                                             />
                                                         ) : (
                                                             <Camera size={18} />
@@ -1216,11 +1216,10 @@ export default function CustomerManagement({ user, canDo = () => true }) {
                                                         title={customer.foto_meter ? 'Klik untuk memperbesar' : 'Tidak ada foto meter'}
                                                     >
                                                         {customer.foto_meter ? (
-                                                            <img
+                                                            <LazyImage
                                                                 src={customer.foto_meter.startsWith('/') ? `${IMAGE_BASE_URL}${customer.foto_meter}` : customer.foto_meter}
                                                                 alt="Foto Meter"
                                                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                onError={(e) => console.error("Image load failed for:", e.target.src)}
                                                             />
                                                         ) : (
                                                             <Droplets size={18} />
@@ -1347,7 +1346,7 @@ export default function CustomerManagement({ user, canDo = () => true }) {
                                                 title={fotoPreview ? 'Klik untuk memperbesar' : 'Belum ada foto meter'}
                                             >
                                                 {fotoPreview ? (
-                                                    <img src={fotoPreview && fotoPreview.startsWith('/') ? `${IMAGE_BASE_URL}${fotoPreview}` : fotoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    <LazyImage src={fotoPreview && fotoPreview.startsWith('/') ? `${IMAGE_BASE_URL}${fotoPreview}` : fotoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 ) : (
                                                     <div style={{ textAlign: 'center', color: '#94a3b8' }}>
                                                         <Droplets size={40} />
@@ -1394,7 +1393,7 @@ export default function CustomerManagement({ user, canDo = () => true }) {
                                                 title={fotoRumahPreview ? 'Klik untuk memperbesar' : 'Belum ada foto rumah'}
                                             >
                                                 {fotoRumahPreview ? (
-                                                    <img src={fotoRumahPreview && fotoRumahPreview.startsWith('/') ? `${IMAGE_BASE_URL}${fotoRumahPreview}` : fotoRumahPreview} alt="Preview Rumah" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    <LazyImage src={fotoRumahPreview && fotoRumahPreview.startsWith('/') ? `${IMAGE_BASE_URL}${fotoRumahPreview}` : fotoRumahPreview} alt="Preview Rumah" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 ) : (
                                                     <div style={{ textAlign: 'center', color: '#94a3b8' }}>
                                                         <Camera size={40} />

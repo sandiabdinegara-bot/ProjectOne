@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import SimpleImageViewer from './common/SimpleImageViewer';
+import LazyImage from './common/LazyImage';
 import { Search, Droplets, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileSpreadsheet, FileText, Printer, BarChart2, SlidersHorizontal, Eye, RefreshCw, Edit2, ChevronDown, X, Calendar, Camera, ZoomIn, Trash2, HardDrive, MapPin, CheckCircle2, AlertCircle, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import CustomDatePicker from './common/CustomDatePicker';
 import { subMonths, startOfMonth, format } from 'date-fns';
@@ -181,7 +182,7 @@ const EditRecordingForm = React.memo(({
                             {[{ id: 'foto', label: 'FOTO METER', preview: fotoPreview }, { id: 'foto_rumah', label: 'FOTO RUMAH', preview: fotoRumahPreview }].map(item => (
                                 <div key={item.id} style={{ textAlign: 'center', flex: 1 }}>
                                     <div onClick={() => item.preview && setSimplePreviewImage(item.preview)} style={{ width: '100%', aspectRatio: '4/3', border: '2px solid #e2e8f0', borderRadius: '12px', position: 'relative', overflow: 'hidden', background: '#f8fafc', cursor: item.preview ? 'pointer' : 'default' }}>
-                                        {item.preview ? <img src={item.preview && item.preview.startsWith('/') ? `${IMAGE_BASE_URL}${item.preview}` : item.preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={item.label} /> : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1' }}><Camera size={24} /><span style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>Tidak Ada Foto</span></div>}
+                                        {item.preview ? <LazyImage src={item.preview && item.preview.startsWith('/') ? `${IMAGE_BASE_URL}${item.preview}` : item.preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={item.label} /> : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1' }}><Camera size={24} /><span style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>Tidak Ada Foto</span></div>}
                                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', color: 'white', fontSize: '0.6rem', padding: '4px', textTransform: 'uppercase', fontWeight: 700 }}>{item.label}</div>
                                     </div>
                                     <label className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.75rem', padding: '0.4rem 0.75rem', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '8px', border: '1px solid #e2e8f0', width: '100%' }}>
@@ -1002,7 +1003,7 @@ export default function MeterAnalysis({ ocrStatusFilter, user, canDo = () => tru
                             <SlidersHorizontal size={18} /><span>Pilih Kolom</span>
                         </button>
                         {isColumnMenuOpen && (
-                            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 1000, background: 'white', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', padding: '1.25rem', minWidth: '240px' }}>
+                            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 1000, background: 'white', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', padding: '1.25rem', minWidth: '240px', maxHeight: '400px', overflowY: 'auto' }}>
                                 <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                     {ALL_COLUMNS.map(col => (
@@ -1462,7 +1463,7 @@ export default function MeterAnalysis({ ocrStatusFilter, user, canDo = () => tru
                                             >
                                                 {previousDetail?.foto_rumah ? (
                                                     <>
-                                                        <img src={previousDetail.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${previousDetail.foto_rumah}` : previousDetail.foto_rumah} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Rumah Awal" />
+                                                        <LazyImage src={previousDetail.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${previousDetail.foto_rumah}` : previousDetail.foto_rumah} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Rumah Awal" />
                                                         <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(255, 255, 255, 0.9)', padding: '0.25rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                             <ZoomIn size={16} color="#64748b" />
                                                         </div>
@@ -1504,7 +1505,7 @@ export default function MeterAnalysis({ ocrStatusFilter, user, canDo = () => tru
                                             >
                                                 {selectedDetail.foto_rumah ? (
                                                     <>
-                                                        <img src={selectedDetail.foto_rumah && selectedDetail.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${selectedDetail.foto_rumah}` : selectedDetail.foto_rumah} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Rumah Akhir" />
+                                                        <LazyImage src={selectedDetail.foto_rumah && selectedDetail.foto_rumah.startsWith('/') ? `${IMAGE_BASE_URL}${selectedDetail.foto_rumah}` : selectedDetail.foto_rumah} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Rumah Akhir" />
                                                         <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(255, 255, 255, 0.9)', padding: '0.25rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                             <ZoomIn size={16} color="#64748b" />
                                                         </div>
@@ -1550,7 +1551,7 @@ export default function MeterAnalysis({ ocrStatusFilter, user, canDo = () => tru
                                             >
                                                 {previousDetail?.foto ? (
                                                     <>
-                                                        <img src={previousDetail?.foto && previousDetail.foto.startsWith('/') ? `${IMAGE_BASE_URL}${previousDetail.foto}` : previousDetail.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Meter Awal" />
+                                                        <LazyImage src={previousDetail?.foto && previousDetail.foto.startsWith('/') ? `${IMAGE_BASE_URL}${previousDetail.foto}` : previousDetail.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Meter Awal" />
                                                         <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(255, 255, 255, 0.9)', padding: '0.25rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                             <ZoomIn size={16} color="#64748b" />
                                                         </div>
@@ -1592,7 +1593,7 @@ export default function MeterAnalysis({ ocrStatusFilter, user, canDo = () => tru
                                             >
                                                 {selectedDetail.foto ? (
                                                     <>
-                                                        <img src={selectedDetail.foto && selectedDetail.foto.startsWith('/') ? `${IMAGE_BASE_URL}${selectedDetail.foto}` : selectedDetail.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Meter Akhir" />
+                                                        <LazyImage src={selectedDetail.foto && selectedDetail.foto.startsWith('/') ? `${IMAGE_BASE_URL}${selectedDetail.foto}` : selectedDetail.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto Meter Akhir" />
                                                         <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(255, 255, 255, 0.9)', padding: '0.25rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                             <ZoomIn size={16} color="#64748b" />
                                                         </div>
@@ -1693,7 +1694,7 @@ export default function MeterAnalysis({ ocrStatusFilter, user, canDo = () => tru
                             maxHeight: '90vh'
                         }}
                     >
-                        <img
+                        <LazyImage
                             src={simplePreviewImage && simplePreviewImage.startsWith('/') ? `${IMAGE_BASE_URL}${simplePreviewImage}` : simplePreviewImage}
                             style={{
                                 maxWidth: '100%',

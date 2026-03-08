@@ -269,7 +269,7 @@ export default function OfficerMapping({ user, canDo = () => true }) {
                                         position: 'absolute', top: 'calc(100% + 8px)', right: 0,
                                         background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px',
                                         boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-                                        padding: '1.25rem', zIndex: 100, minWidth: '240px',
+                                        padding: '1.25rem', zIndex: 100, minWidth: '240px', maxHeight: '400px', overflowY: 'auto',
                                         animation: 'fadeIn 0.2s ease-out'
                                     }}>
                                         <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>

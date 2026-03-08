@@ -658,6 +658,8 @@ export default function BranchManagement({ isReport = false, onReportClose, user
                                         boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
                                         padding: '1.25rem',
                                         minWidth: '220px',
+                                        maxHeight: '400px',
+                                        overflowY: 'auto',
                                         animation: 'fadeIn 0.2s ease-out'
                                     }}>
                                         <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem', color: 'var(--text)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Tampilkan Kolom</div>

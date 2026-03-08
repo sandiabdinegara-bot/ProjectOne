@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
-import { User, Lock, LogIn, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Lock, LogIn, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    const savedUsername = localStorage.getItem('sicater_remember_username');
+    if (savedUsername) {
+      setUsername(savedUsername);
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,6 +34,11 @@ export default function LoginPage({ onLoginSuccess }) {
       const data = await response.json();
 
       if (response.ok) {
+        if (rememberMe) {
+          localStorage.setItem('sicater_remember_username', username);
+        } else {
+          localStorage.removeItem('sicater_remember_username');
+        }
         onLoginSuccess(data.user);
       } else {
         setError(data.error || 'Login gagal. SIlakan coba lagi.');
@@ -76,7 +91,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
         .login-card {
           width: 100%;
-          max-width: 440px;
+          max-width: 480px; /* Adjusted to accommodate longer footer text */
           background: rgba(255, 255, 255, 0.03) !important;
           backdrop-filter: blur(12px) !important;
           border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -174,6 +189,55 @@ export default function LoginPage({ onLoginSuccess }) {
         .login-input:focus + .input-icon {
           color: #3b82f6 !important;
         }
+        .password-toggle {
+          position: absolute;
+          right: 1.25rem;
+          background: none;
+          border: none;
+          color: #64748b;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          transition: color 0.3s ease;
+          z-index: 5;
+        }
+
+        .password-toggle:hover {
+          color: #e2e8f0;
+        }
+
+        .remember-me {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-top: -0.5rem;
+          margin-bottom: 0.5rem;
+          cursor: pointer;
+        }
+
+        .remember-me input {
+          margin: 0;
+          width: 1rem;
+          height: 1rem;
+          border-radius: 4px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.05);
+          cursor: pointer;
+          accent-color: #3b82f6;
+          transform: translateY(-1px);
+        }
+
+        .remember-me label {
+          font-size: 0.8125rem;
+          color: #cbd5e1;
+          cursor: pointer;
+          user-select: none;
+          line-height: 1;
+          margin: 0;
+          transform: translateY(0.5px);
+        }
 
         /* Autofill Styling */
         .login-input:-webkit-autofill,
@@ -182,6 +246,12 @@ export default function LoginPage({ onLoginSuccess }) {
           -webkit-text-fill-color: white !important;
           -webkit-box-shadow: 0 0 0px 1000px #1e293b inset !important;
           transition: background-color 5000s ease-in-out 0s;
+        }
+
+        /* Hide default browser password reveal icon */
+        .login-input::-ms-reveal,
+        .login-input::-ms-clear {
+          display: none !important;
         }
 
         .login-button {
@@ -198,9 +268,15 @@ export default function LoginPage({ onLoginSuccess }) {
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
-          gap: 0.75rem !important;
+          position: relative !important;
           box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3) !important;
         }
+
+        .login-button-icon {
+          position: absolute !important;
+          left: 1.5rem !important;
+        }
+
 
         .login-button:hover:not(:disabled) {
           transform: translateY(-2px);
@@ -240,8 +316,10 @@ export default function LoginPage({ onLoginSuccess }) {
         .login-footer {
           margin-top: 2.5rem;
           text-align: center;
-          font-size: 0.8125rem;
-          color: #64748b;
+          font-size: 0.75rem;
+          color: #94a3b8;
+          line-height: 1.6;
+          opacity: 0.8;
         }
 
         @media (max-width: 480px) {
@@ -285,7 +363,7 @@ export default function LoginPage({ onLoginSuccess }) {
             <label className="form-label">Password</label>
             <div className="input-container">
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 className="login-input"
                 placeholder="Masukkan password"
                 value={password}
@@ -293,7 +371,25 @@ export default function LoginPage({ onLoginSuccess }) {
                 required
               />
               <Lock size={18} className="input-icon" />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex="-1"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
+          </div>
+
+          <div className="remember-me">
+            <input
+              type="checkbox"
+              id="remember"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            <label htmlFor="remember">Simpan Username</label>
           </div>
 
           <button className="login-button" type="submit" disabled={loading}>
@@ -301,15 +397,15 @@ export default function LoginPage({ onLoginSuccess }) {
               <Loader2 size={20} className="animate-spin" />
             ) : (
               <>
-                <LogIn size={20} />
-                <span>Masuk Sekarang</span>
+                <LogIn size={20} className="login-button-icon" />
+                <span>Masuk</span>
               </>
             )}
           </button>
         </form>
 
         <div className="login-footer">
-          &copy; {new Date().getFullYear()} PDAM SMART - Sistem Informasi Cater
+          &copy; {new Date().getFullYear()} PDAM SMART - Sistem Informasi Pembaca Meter Air
         </div>
       </div>
     </div>
